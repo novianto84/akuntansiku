@@ -6,6 +6,7 @@ const fmt=n=>"Rp "+Number(Math.round(n||0)).toLocaleString("id-ID");
 const esc=s=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 const today=()=>new Date().toISOString().slice(0,10);
 const tok=()=>localStorage.getItem("tok")||"";
+const MENU_ICONS={"Dashboard":"📈","Penjualan":"🛒","Pembelian":"📦","Kas & Bank":"💰","Buku Besar":"📒","Persediaan":"🏪","Aset Tetap":"🏢","Laporan":"📊","Master":"⚙️","AI & Integrasi":"🤖"};
 async function api(p,o){const r=await fetch(p,{headers:{"Content-Type":"application/json","Authorization":"Bearer "+tok()},...o});
  if(r.status===401){logout();throw new Error("Sesi habis, silakan login lagi");}
  const j=await r.json();if(!r.ok)throw new Error(j.error||"Error");return j;}
@@ -31,15 +32,32 @@ async function boot(){
  $("#nav").innerHTML+=`<div class="mut">${esc(ME.full_name)} (${esc(ME.role)})</div><button onclick="logout()">Keluar</button><button onclick="chPass()">Ganti password</button>`;
  loadM().then(render).catch(e=>{$("#app").innerHTML=`<div class="card">❌ ${esc(e.message)}</div>`;});
 }
-function loginScreen(){$("#title").textContent="Login";$("#nav").innerHTML="";$("#app").innerHTML=`<div class="login-wrap"><div class="login-card"><h3>📘 Masuk AkuntansiKu</h3>
- <div class="row">Username <input id="l_u" value="admin"></div><div class="row">Password <input id="l_p" type="password" value="admin123"></div>
+function loginScreen(){
+ const main=$("main");main.innerHTML="";
+ document.body.style.background="linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
+ main.innerHTML=`<div class="login-wrap"><div class="login-card">
+ <span class="logo-icon">📊</span>
+ <h3>AkuntansiKu</h3>
+ <p class="tagline">Sistem Akuntansi Modern & Terintegrasi</p>
+ <input id="l_u" placeholder="Username" value="admin">
+ <input id="l_p" type="password" placeholder="Password" value="admin123">
  <button class="go" onclick="doLogin()">Masuk</button>
- <p class="mut">Default: admin/admin123, manager/manager123, kasir/kasir123</p><div id="l_err"></div></div></div>`;}
+ <div class="hints">
+ <p><b>Demo:</b> admin / admin123</p>
+ <p>manager / manager123</p>
+ <p>kasir / kasir123</p>
+ </div>
+ <div id="l_err"></div></div></div>`;
+}
 window.doLogin=async()=>{try{const r=await (await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:$("#l_u").value,password:$("#l_p").value})})).json();
  if(!r.ok&&!r.token)throw new Error(r.error||"Gagal");localStorage.setItem("tok",r.token);
  if(r.must_change_password){alert("Demi keamanan: password default masih dipakai. Wajib ganti password sekarang.");location.reload();setTimeout(()=>{if(window.chPass)window.chPass();},800);return;}
  location.reload();}catch(e){$("#l_err").textContent=e.message;}};
-function drawNav(){$("#nav").innerHTML=MENUS.map(m=>`<button class="${m===cur?'active':''}" onclick="go('${m}')">${m}</button>`).join("");}
+function drawNav(){
+ const nav=$("#nav");
+ const userSection=ME?`<div class="user-info"><div class="user-avatar">${(ME.full_name||"U").charAt(0).toUpperCase()}</div><div class="user-details"><div class="user-name">${esc(ME.full_name)}</div><div class="user-role">${esc(ME.role)}</div></div></div><button onclick="chPass()" title="Ganti Password"><span class="nav-icon">🔑</span>Ganti Password</button><button onclick="logout()" title="Keluar"><span class="nav-icon">🚪</span>Keluar</button>`:"";
+ nav.innerHTML=`<div class="nav-section">Menu</div>${MENUS.map(m=>`<button class="${m===cur?'active':''}" onclick="go('${m}')"><span class="nav-icon">${MENU_ICONS[m]||"📄"}</span>${m}</button>`).join("")}${userSection}`;
+}
 function go(m){cur=m;$("#title").textContent=m;drawNav();render();}
 function coaSel(v){return `<select id="${v}">${COA.map(c=>`<option value="${c.id}">${c.account_code} — ${c.account_name}</option>`).join("")}</select>`;}
 function st(x){return `<span class="bdg b-${x}">${x}</span>`;}
@@ -101,27 +119,40 @@ async function render(){
  const A=$("#app");
  try{
  if(cur==="Dashboard"){
-  const d=await api("/api/dashboard");const f=await api("/api/forecast");
-  A.innerHTML=`<div class="grid">
-   <div class="kpi">Omzet<br><b>${fmt(d.omzet)}</b></div><div class="kpi">Kas & Bank<br><b>${fmt(d.kas_bank)}</b></div>
-   <div class="kpi">Piutang Outstanding<br><b>${fmt(d.piutang_outstanding)}</b></div><div class="kpi">Pembelian<br><b>${fmt(d.pembelian)}</b></div></div>
-  <div class="card"><h3>💡 Cash-Flow Forecast (Next-Gen)</h3><table>${f.map(x=>`<tr><td>${x.bulan}</td><td>${fmt(x.proyeksi_kas_masuk)}</td></tr>`).join("")}</table>
-  <p class="mut">${d.forecast}</p></div>
-  <div class="card"><h3>⚠️ Stok menipis (&lt;5)</h3>${d.stok_menipis.length?d.stok_menipis.map(s=>s.item_code+" "+s.item_name).join("<br>"):"Aman — semua stok cukup."}
-  <p class="mut">📝 SO terbuka: <b>${d.open_so||0}</b> | PO terbuka: <b>${d.open_po||0}</b> (lihat modul Penjualan/Pembelian)</p></div>
-  <div class="card"><h3>📍 Absensi Cepat (GPS)</h3>
-  <div class="row">Karyawan <select id="ab_emp"></select>
-  <button class="go" onclick="att('in')">Masuk</button><button class="go" onclick="att('out')">Pulang</button></div>
-  <div id="ab_out" class="mut">Lokasi GPS diambil otomatis dari browser.</div></div>
-  <div class="card"><h3>📊 Omzet 6 Bulan Terakhir</h3><div id="ch"></div></div>
-  <div class="card"><h3>⏰ Lewat Jatuh Tempo</h3><div id="due">Memuat…</div></div>`;
+   const d=await api("/api/dashboard");const f=await api("/api/forecast");
+   A.innerHTML=`<div class="grid">
+    <div class="kpi kpi-info"><div class="kpi-icon">📈</div><div class="kpi-label">Omzet</div><b>${fmt(d.omzet)}</b></div>
+    <div class="kpi kpi-success"><div class="kpi-icon">💰</div><div class="kpi-label">Kas & Bank</div><b>${fmt(d.kas_bank)}</b></div>
+    <div class="kpi kpi-warning"><div class="kpi-icon">📋</div><div class="kpi-label">Piutang Outstanding</div><b>${fmt(d.piutang_outstanding)}</b></div>
+    <div class="kpi"><div class="kpi-icon">🛒</div><div class="kpi-label">Pembelian</div><b>${fmt(d.pembelian)}</b></div></div>
+   <div class="card"><h3><span class="card-icon">💡</span>Cash-Flow Forecast (Next-Gen)</h3>
+   <div style="overflow-x:auto"><table><thead><tr><th>Bulan</th><th>Proyeksi Kas Masuk</th><th>Status</th></tr></thead><tbody>${f.map(x=>`<tr><td>${x.bulan}</td><td><b>${fmt(x.proyeksi_kas_masuk)}</b></td><td><span class="bdg b-PENDING">Proyeksi</span></td></tr>`).join("")}</tbody></table></div>
+   <p class="mut" style="margin-top:12px">${d.forecast}</p></div>
+   <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr))">
+   <div class="card"><h3><span class="card-icon">⚠️</span>Stok Menipis</h3>${d.stok_menipis.length?`<div style="max-height:200px;overflow-y:auto">${d.stok_menipis.map(s=>`<div style="padding:8px;margin:4px 0;background:#fff5f5;border-radius:8px;border-left:3px solid #f56565"><b>${s.item_code}</b> - ${s.item_name}</div>`).join("")}</div>`:'<div class="empty-state"><div class="icon">✅</div><h4>Semua Stok Aman</h4><p>Tidak ada stok yang menipis</p></div>'}
+   <p class="mut" style="margin-top:12px">📝 SO terbuka: <b>${d.open_so||0}</b> | PO terbuka: <b>${d.open_po||0}</b></p></div>
+   <div class="card"><h3><span class="card-icon">📍</span>Absensi Cepat (GPS)</h3>
+   <div class="row">Karyawan <select id="ab_emp" style="flex:1"></select></div>
+   <div class="row"><button class="go ok" onclick="att('in')">✅ Masuk</button><button class="go danger" onclick="att('out')">🚪 Pulang</button></div>
+   <div id="ab_out" class="mut">Lokasi GPS diambil otomatis dari browser.</div></div></div>
+   <div class="card"><h3><span class="card-icon">📊</span>Omzet 6 Bulan Terakhir</h3><div id="ch" style="padding:16px 0"></div></div>
+   <div class="card"><h3><span class="card-icon">⏰</span>Lewat Jatuh Tempo</h3><div id="due">Memuat…</div></div>`;
   api("/api/employees").then(e=>{$("#ab_emp").innerHTML=e.filter(x=>x.is_active).map(x=>`<option value="${x.id}">${x.full_name}</option>`).join("");}).catch(()=>{$("#ab_out").textContent="Gagal muat karyawan.";});
-  api("/api/dashboard/monthly").then(m=>{const mx=Math.max(1,...m.map(x=>x.omzet));
-   $("#ch").innerHTML=m.map(x=>`<div class="row"><span style="width:70px">${x.bulan}</span><div style="flex:1;background:#020617;border-radius:6px"><div style="width:${Math.round(x.omzet/mx*100)}%;background:var(--acc);border-radius:6px">&nbsp;</div></div><span style="width:130px;text-align:right">${fmt(x.omzet)}</span></div>`).join("");}).catch(()=>{});
-  Promise.all([api("/api/aging?type=AR"),api("/api/aging?type=AP")]).then(([ar,ap])=>{
-   const od=ar.filter(x=>x.days_overdue>0), oa=ap.filter(x=>x.days_overdue>0);
-   $("#due").innerHTML=(od.length?`<b>Piutang telat ${od.length}:</b> `+od.map(x=>`${x.invoice_number} (${x.contact}) ${fmt(x.outstanding)} ${x.days_overdue}hr`).join("; "):"Piutang aman. ")+"<br>"+
-   (oa.length?`<b>Utang telat ${oa.length}:</b> `+oa.map(x=>`${x.invoice_number} (${x.contact}) ${fmt(x.outstanding)} ${x.days_overdue}hr`).join("; "):"Utang aman.");}).catch(()=>{$("#due").textContent="—";});
+   api("/api/dashboard/monthly").then(m=>{const mx=Math.max(1,...m.map(x=>x.omzet));
+    const colors=["#667eea","#764ba2","#f093fb","#f5576c","#4facfe","#43e97b"];
+    $("#ch").innerHTML=`<div style="display:flex;align-items:flex-end;gap:12px;height:180px;padding:0 10px">${m.map((x,i)=>{const h=Math.round(x.omzet/mx*100);return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:8px"><div style="width:100%;height:${Math.max(h,8)}%;background:linear-gradient(180deg,${colors[i%colors.length]} 0%,${colors[(i+1)%colors.length]} 100%);border-radius:8px 8px 0 0;transition:all 0.3s;min-height:8px"></div><div style="font-size:11px;color:var(--mut)">${x.bulan}</div><div style="font-size:12px;font-weight:600;color:var(--ink)">${fmt(x.omzet)}</div></div>`;}).join("")}</div>`;}).catch(()=>{});
+   Promise.all([api("/api/aging?type=AR"),api("/api/aging?type=AP")]).then(([ar,ap])=>{
+    const od=ar.filter(x=>x.days_overdue>0), oa=ap.filter(x=>x.days_overdue>0);
+    let html="<div style='display:flex;gap:16px;flex-wrap:wrap'>";
+    html+=`<div style="flex:1;min-width:250px"><h4 style="color:var(--bad);margin-bottom:8px">Piutang (${od.length} telat)</h4>`;
+    if(od.length){html+=`<div style="max-height:150px;overflow-y:auto">${od.map(x=>`<div style="padding:8px;margin:4px 0;background:#fff5f5;border-radius:8px;border-left:3px solid #f56565"><b>${x.invoice_number}</b> - ${x.contact}<br><span style="color:var(--mut)">${fmt(x.outstanding)} | ${x.days_overdue} hari telat</span></div>`).join("")}</div>`;}
+    else{html+='<div class="empty-state" style="padding:16px"><div class="icon">✅</div><p>Piutang aman</p></div>';}
+    html+="</div>";
+    html+=`<div style="flex:1;min-width:250px"><h4 style="color:var(--warn);margin-bottom:8px">Utang (${oa.length} telat)</h4>`;
+    if(oa.length){html+=`<div style="max-height:150px;overflow-y:auto">${oa.map(x=>`<div style="padding:8px;margin:4px 0;background:#fffff0;border-radius:8px;border-left:3px solid #ed8936"><b>${x.invoice_number}</b> - ${x.contact}<br><span style="color:var(--mut)">${fmt(x.outstanding)} | ${x.days_overdue} hari telat</span></div>`).join("")}</div>`;}
+    else{html+='<div class="empty-state" style="padding:16px"><div class="icon">✅</div><p>Utang aman</p></div>';}
+    html+="</div></div>";
+    $("#due").innerHTML=html;}).catch(()=>{$("#due").textContent="—";});
  }
  if(cur==="Penjualan"){
   const sub=window._psub||"invoice";
