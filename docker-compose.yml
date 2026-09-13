@@ -1,0 +1,13 @@
+services:
+  akuntansiku:
+    build: .
+    container_name: akuntansiku
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      PORT: "8000"
+      AKUNTANSIKU_DB: /app/data/database.db
+    volumes:
+      - ./data:/app/data
+      - ./backup:/app/backup
