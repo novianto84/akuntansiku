@@ -1,12 +1,16 @@
 const $=s=>document.querySelector(s);
-const ALL_MENUS=["Dashboard","Penjualan","Pembelian","Kas & Bank","Buku Besar","Persediaan","Aset Tetap","Laporan","Master","AI & Integrasi"];
+const ALL_MENUS=["Dashboard","Penjualan","Pembelian","Kas & Bank","Buku Besar","Persediaan","Aset Tetap","Laporan","Master","HRD","AI & Integrasi"];
 let MENUS=ALL_MENUS;
 let COA=[],WH=[],ITEMS=[],CUST=[],VEND=[],SP=[],BR=[],TAX=[],cur="Dashboard",ME=null;
+let curSub="",curDetail=null,curDetailId=null,searchQ="";
+const MASTER_SUBS={"Keuangan":["Chart of Accounts","Pajak"],"Pelanggan":["Daftar Pelanggan"],"Vendor":["Daftar Vendor"],"Persediaan":["Daftar Barang","Gudang"],"Sales":["Salesman"],"Organisasi":["Cabang","Karyawan"],"Sistem":["User & Peran","Backup & Restore","Log Aktivitas"]};
+const MASTER_SUB_ICONS={"Keuangan":"💰","Pelanggan":"👥","Vendor":"🏭","Persediaan":"📦","Sales":"👨‍💼","Organisasi":"🏢","Sistem":"⚙️"};
+const SUB_ICONS={"Chart of Accounts":"📒","Pajak":"🏷️","Daftar Pelanggan":"👥","Daftar Vendor":"🏭","Daftar Barang":"📦","Gudang":"🏪","Salesman":"👨‍💼","Cabang":"🏢","Karyawan":"👤","User & Peran":"🔐","Backup & Restore":"💾","Log Aktivitas":"📋"};
 const fmt=n=>"Rp "+Number(Math.round(n||0)).toLocaleString("id-ID");
 const esc=s=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 const today=()=>new Date().toISOString().slice(0,10);
 const tok=()=>localStorage.getItem("tok")||"";
-const MENU_ICONS={"Dashboard":"📈","Penjualan":"🛒","Pembelian":"📦","Kas & Bank":"💰","Buku Besar":"📒","Persediaan":"🏪","Aset Tetap":"🏢","Laporan":"📊","Master":"⚙️","AI & Integrasi":"🤖"};
+const MENU_ICONS={"Dashboard":"📈","Penjualan":"🛒","Pembelian":"📦","Kas & Bank":"💰","Buku Besar":"📒","Persediaan":"🏪","Aset Tetap":"🏢","Laporan":"📊","Master":"⚙️","HRD":"👥","AI & Integrasi":"🤖"};
 async function api(p,o){const r=await fetch(p,{headers:{"Content-Type":"application/json","Authorization":"Bearer "+tok()},...o});
  if(r.status===401){logout();throw new Error("Sesi habis, silakan login lagi");}
  const j=await r.json();if(!r.ok)throw new Error(j.error||"Error");return j;}
@@ -25,7 +29,7 @@ async function boot(){
  const R=ME.role;
  MENUS = R==="KASIR" ? ["Dashboard","Penjualan","Pembelian","Kas & Bank","Persediaan"]
   : R==="GUDANG" ? ["Dashboard","Persediaan","Pembelian"]
-  : R==="HRD" ? ["Dashboard","Master"]
+   : R==="HRD" ? ["Dashboard","Master","HRD"]
   : R==="FINANCE" ? ALL_MENUS.filter(m=>m!=="Master")
   : ALL_MENUS;
  if(!MENUS.includes(cur))cur="Dashboard";
@@ -55,10 +59,22 @@ window.doLogin=async()=>{try{const r=await (await fetch("/api/login",{method:"PO
  location.reload();}catch(e){$("#l_err").textContent=e.message;}};
 function drawNav(){
  const nav=$("#nav");
+ let menuHtml=MENUS.map(m=>{
+  if(m==="Master"&&cur==="Master"){
+   let subHtml=Object.keys(MASTER_SUBS).map(k=>`<button class="sub-btn${curSub===k?' active':''}" onclick="goMaster('${k}')"><span class="nav-icon">${MASTER_SUB_ICONS[k]||"📄"}</span>${k}</button>`).join("");
+   return `<button class="${m===cur?'active':''}" onclick="go('${m}')"><span class="nav-icon">${MENU_ICONS[m]||"📄"}</span>${m}</button><div class="sub-nav">${subHtml}</div>`;
+  }
+  return `<button class="${m===cur?'active':''}" onclick="go('${m}')"><span class="nav-icon">${MENU_ICONS[m]||"📄"}</span>${m}</button>`;
+ }).join("");
  const userSection=ME?`<div class="user-info"><div class="user-avatar">${(ME.full_name||"U").charAt(0).toUpperCase()}</div><div class="user-details"><div class="user-name">${esc(ME.full_name)}</div><div class="user-role">${esc(ME.role)}</div></div></div><button onclick="chPass()" title="Ganti Password"><span class="nav-icon">🔑</span>Ganti Password</button><button onclick="logout()" title="Keluar"><span class="nav-icon">🚪</span>Keluar</button>`:"";
- nav.innerHTML=`<div class="nav-section">Menu</div>${MENUS.map(m=>`<button class="${m===cur?'active':''}" onclick="go('${m}')"><span class="nav-icon">${MENU_ICONS[m]||"📄"}</span>${m}</button>`).join("")}${userSection}`;
+ nav.innerHTML=`<div class="nav-section">Menu</div>${menuHtml}${userSection}`;
 }
-function go(m){cur=m;$("#title").textContent=m;drawNav();render();}
+function go(m){cur=m;curSub="";curDetail=null;curDetailId=null;searchQ="";$("#title").textContent=m;drawNav();render();}
+window.goMaster=sub=>{curSub=sub;curDetail=null;curDetailId=null;searchQ="";$("#title").textContent="Master — "+sub;drawNav();render();};
+window.goDetail=(type,id)=>{curDetail=type;curDetailId=id;render();};
+window.goBack=()=>{curDetail=null;curDetailId=null;render();};
+function searchBar(placeholder,onsrch){return `<div class="search-bar"><input type="text" id="search_input" placeholder="${placeholder}" value="${esc(searchQ)}" oninput="searchQ=this.value" onkeyup="if(event.key==='Enter'){${onsrch}}"><button class="go info" onclick="${onsrch}">Cari</button></div>`;}
+function filterRows(rows,q){if(!q)return rows;const lq=q.toLowerCase();return rows.filter(r=>JSON.stringify(r).toLowerCase().includes(lq));}
 function coaSel(v){return `<select id="${v}">${COA.map(c=>`<option value="${c.id}">${c.account_code} — ${c.account_name}</option>`).join("")}</select>`;}
 function st(x){return `<span class="bdg b-${x}">${x}</span>`;}
 let GRIDS={};
@@ -115,6 +131,85 @@ function gridLines(gid){
   const o={item_id:r.item_id,qty:r.qty,price:r.price,discount_pct:r.d1,discount_pct2:r.d2,description:r.desc||"",unit_code:parts[0],unit_conv:+parts[1]||1};
   if(G.cfg.wh)o.warehouse_id=r.wh;return o;});
 }
+function renderCustomerDetail(id){
+ const c=CUST.find(x=>x.id===id);if(!c)return A.innerHTML=`<div class="card">Pelanggan tidak ditemukan.</div>`;
+ const a=COA.find(x=>x.id===c.receivable_account_id);
+ return `<div class="card">
+  <div class="row" style="margin-bottom:16px"><button class="go" onclick="goBack()">← Kembali</button> <h3 style="margin:0">Detail Pelanggan</h3></div>
+  <div class="grid" style="grid-template-columns:1fr 1fr">
+   <div><p><b>Kode:</b> ${esc(c.customer_code)}</p><p><b>Nama:</b> ${esc(c.customer_name)}</p><p><b>Email:</b> ${esc(c.email||"-")}</p></div>
+   <div><p><b>Akun Piutang:</b> ${a?esc(a.account_code+" "+a.account_name):"-"}</p><p><b>Limit Piutang:</b> ${fmt(c.credit_limit||0)}</p><p><b>Termin:</b> ${esc((c.terms||"")+" "+(c.term_days||""))}</p></div>
+  </div>
+  <div class="row" style="margin-top:16px"><button class="go" onclick="editCustomer(${c.id})">✏️ Edit</button></div>
+ </div>
+ <div class="card"><h3>Edit Pelanggan</h3>
+  <div class="grid" style="grid-template-columns:1fr 1fr">
+   <div><div class="row">Nama <input id="ec_name" value="${esc(c.customer_name)}"></div>
+   <div class="row">Email <input id="ec_email" value="${esc(c.email||"")}" type="email"></div></div>
+   <div><div class="row">Limit <input id="ec_limit" value="${c.credit_limit||0}" type="number"></div>
+   <div class="row">Termin <input id="ec_terms" value="${esc(c.terms||"NET 30")}" style="width:100px"> Hari <input id="ec_days" value="${c.term_days||30}" style="width:60px" type="number"></div></div>
+  </div>
+  <div class="row" style="margin-top:12px"><button class="go" onclick="saveEditCust(${c.id})">💾 Simpan</button></div>
+ </div>`;
+}
+window.editCustomer=id=>{curDetail="customer";curDetailId=id;render();};
+window.saveEditCust=async id=>{try{await api("/api/customers/"+id,{method:"PUT",body:JSON.stringify({customer_name:$("#ec_name").value,email:$("#ec_email").value})});await api("/api/customers/limit",{method:"POST",body:JSON.stringify({id,credit_limit:+$("#ec_limit").value,terms:$("#ec_terms").value,term_days:+$("#ec_days").value})});await loadM();alert("Tersimpan");render();}catch(e){alert(e.message)}};
+function renderVendorDetail(id){
+ const v=VEND.find(x=>x.id===id);if(!v)return A.innerHTML=`<div class="card">Vendor tidak ditemukan.</div>`;
+ const a=COA.find(x=>x.id===v.payable_account_id);
+ return `<div class="card">
+  <div class="row" style="margin-bottom:16px"><button class="go" onclick="goBack()">← Kembali</button> <h3 style="margin:0">Detail Vendor</h3></div>
+  <div class="grid" style="grid-template-columns:1fr 1fr">
+   <div><p><b>Kode:</b> ${esc(v.vendor_code)}</p><p><b>Nama:</b> ${esc(v.vendor_name)}</p><p><b>Email:</b> ${esc(v.email||"-")}</p></div>
+   <div><p><b>Akun Utang:</b> ${a?esc(a.account_code+" "+a.account_name):"-"}</p><p><b>Limit Utang:</b> ${fmt(v.credit_limit||0)}</p></div>
+  </div>
+  <div class="row" style="margin-top:16px"><button class="go" onclick="editVendor(${v.id})">✏️ Edit</button></div>
+ </div>
+ <div class="card"><h3>Edit Vendor</h3>
+  <div class="grid" style="grid-template-columns:1fr 1fr">
+   <div><div class="row">Nama <input id="ev_name" value="${esc(v.vendor_name)}"></div>
+   <div class="row">Email <input id="ev_email" value="${esc(v.email||"")}" type="email"></div></div>
+   <div><div class="row">Limit <input id="ev_limit" value="${v.credit_limit||0}" type="number"></div></div>
+  </div>
+  <div class="row" style="margin-top:12px"><button class="go" onclick="saveEditVend(${v.id})">💾 Simpan</button></div>
+ </div>`;
+}
+window.editVendor=id=>{curDetail="vendor";curDetailId=id;render();};
+window.saveEditVend=async id=>{try{await api("/api/vendors/"+id,{method:"PUT",body:JSON.stringify({vendor_name:$("#ev_name").value,email:$("#ev_email").value})});await api("/api/vendors/limit",{method:"POST",body:JSON.stringify({id,credit_limit:+$("#ev_limit").value})});await loadM();alert("Tersimpan");render();}catch(e){alert(e.message)}};
+function renderItemDetail(id){
+ const it=ITEMS.find(x=>x.id===id);if(!it)return A.innerHTML=`<div class="card">Barang tidak ditemukan.</div>`;
+ const stk=window._stkCache||[];
+ const itemStk=stk.filter(s=>s.item_code===it.item_code);
+ const meth=itemStk.length?itemStk[0].method:"AVERAGE";
+ const totalStock=itemStk.reduce((a,s)=>a+s.stock,0);
+ const totalValue=itemStk.reduce((a,s)=>a+s.value,0);
+ return `<div class="card">
+  <div class="row" style="margin-bottom:16px"><button class="go" onclick="goBack()">← Kembali</button> <h3 style="margin:0">Detail Barang</h3></div>
+  <div class="grid" style="grid-template-columns:1fr 1fr">
+   <div><p><b>Kode:</b> ${esc(it.item_code)}</p><p><b>Nama:</b> ${esc(it.item_name)}</p><p><b>Tipe:</b> ${esc(it.item_type)}</p></div>
+   <div><p><b>Stok Total:</b> ${totalStock} ${it.base_unit}</p><p><b>Nilai Stok:</b> ${fmt(totalValue)}</p><p><b>Metode HPP:</b> ${meth}</p></div>
+  </div>
+  <div class="grid" style="grid-template-columns:1fr 1fr 1fr;margin-top:12px">
+   <div class="kpi"><div class="kpi-label">Harga Beli</div><b>${fmt(it.purchase_price||0)}</b></div>
+   <div class="kpi kpi-info"><div class="kpi-label">Harga Jual</div><b>${fmt(it.sales_price||0)}</b></div>
+   <div class="kpi kpi-success"><div class="kpi-label">Avg Cost</div><b>${fmt(it.avg_cost||0)}</b></div>
+  </div>
+  ${itemStk.length?`<div class="card" style="margin-top:16px"><h3>Stok per Gudang</h3><table><thead><tr><th>Gudang</th><th>Stok</th><th>Nilai</th><th>Avg Cost</th></tr></thead><tbody>${itemStk.map(s=>`<tr><td>${esc(s.warehouse)}</td><td>${s.stock}</td><td>${fmt(s.value)}</td><td>${fmt(s.avg_cost)}</td></tr>`).join("")}</tbody></table></div>`:""}
+  <div class="row" style="margin-top:16px"><button class="go" onclick="editItem(${it.id})">✏️ Edit</button> <button class="go info" onclick="showStockCard(${it.id})">📊 Kartu Stok</button></div>
+ </div>
+ <div class="card"><h3>Edit Barang</h3>
+  <div class="grid" style="grid-template-columns:1fr 1fr">
+   <div><div class="row">Nama <input id="ei_name" value="${esc(it.item_name)}"></div>
+   <div class="row">Harga Beli <input id="ei_bp" value="${it.purchase_price||0}" type="number"></div></div>
+   <div><div class="row">Harga Jual <input id="ei_sp" value="${it.sales_price||0}" type="number"></div>
+   <div class="row">Tipe <select id="ei_type"><option${it.item_type==="INVENTORY"?" selected":""}>INVENTORY</option><option${it.item_type==="SERVICE"?" selected":""}>SERVICE</option><option${it.item_type==="NON_INVENTORY"?" selected":""}>NON_INVENTORY</option></select></div></div>
+  </div>
+  <div class="row" style="margin-top:12px"><button class="go" onclick="saveEditItem(${it.id})">💾 Simpan</button></div>
+ </div>`;
+}
+window.editItem=id=>{curDetail="item";curDetailId=id;render();};
+window.saveEditItem=async id=>{try{await api("/api/items/"+id,{method:"PUT",body:JSON.stringify({item_name:$("#ei_name").value,purchase_price:+$("#ei_bp").value,sales_price:+$("#ei_sp").value,item_type:$("#ei_type").value})});await loadM();alert("Tersimpan");render();}catch(e){alert(e.message)}};
+window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="+id);curDetail="stockcard";curDetailId=id;window._stockCardData=r;render();}catch(e){alert(e.message)}};
 async function render(){
  const A=$("#app");
  try{
@@ -409,55 +504,83 @@ async function render(){
  if(cur==="Master"){
   let users=[],logs=[];
   const stk=await api("/api/stock");
+  window._stkCache=stk;
   const valOf=c=>stk.filter(s=>s.item_code===c).reduce((a,s)=>a+s.value,0);
   const methOf=c=>{const s=stk.find(s=>s.item_code===c);return s?s.method:"AVERAGE";};
   if(ME.role!=="KASIR"){try{logs=await api("/api/activity");}catch(e){}
    if(ME.role==="ADMIN"){try{users=await api("/api/users");}catch(e){}}}
-  A.innerHTML=`<div class="card"><h3>Chart of Accounts (5-digit)</h3><table>${COA.map(c=>`<tr><td>${c.account_code}</td><td>${c.account_name}</td><td>${c.account_type}</td></tr>`).join("")}</table>
-  <div class="row">Kode <input id="c_c" value="63002"> Nama <input id="c_n" value="Beban Iklan"> <select id="c_t"><option>EXPENSE</option><option>ASSET</option><option>LIABILITY</option><option>EQUITY</option><option>REVENUE</option><option>COGS</option></select>
-  <button class="go" onclick="saveCOA()">Tambah Akun</button></div></div>
-  <div class="card"><h3>Barang, Satuan & Metode HPP</h3><table><tr><th>Kode</th><th>Nama</th><th>Stok (dasar)</th><th>Satuan</th><th>Metode</th><th>Nilai Stok</th><th></th></tr>${ITEMS.map(i=>`<tr><td>${i.item_code}</td><td>${i.item_name}</td><td>${i.stock} ${i.base_unit}</td><td>${(i.units||[]).map(u=>u.unit_code+"×"+u.conversion).join(", ")}</td><td>${methOf(i.item_code)}</td><td>${fmt(valOf(i.item_code))}</td><td>${i.item_type==="INVENTORY"?`<button class="go" onclick="setMethod(${i.id},'${methOf(i.item_code)==="FIFO"?"AVERAGE":"FIFO"}')">jadi ${methOf(i.item_code)==="FIFO"?"AVERAGE":"FIFO"}</button>`:""}</td></tr>`).join("")}</table>
-  <div class="row">Barang <select id="u_item">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
-  Satuan <input id="u_code" value="BOX" style="width:70px"> Isi (konversi) <input id="u_conv" value="10" style="width:80px">
-  <button class="go" onclick="saveU()">Tambah Satuan</button></div></div>
-  <div class="card"><h3>Vendor & Limit Utang (0 = tanpa limit)</h3><table><tr><th>Kode</th><th>Nama</th><th>Limit</th></tr>${VEND.map(v=>`<tr><td>${v.vendor_code}</td><td>${v.vendor_name}</td><td>${fmt(v.credit_limit||0)}</td></tr>`).join("")}</table>
-  <div class="row">Vendor <select id="vl_id">${VEND.map(v=>`<option value="${v.id}">${v.vendor_name}</option>`).join("")}</select>
-  Limit <input id="vl_amt" value="50000000"><button class="go" onclick="saveVL()">Simpan Limit</button></div></div>
-  <div class="card"><h3>Salesman, Komisi & Target</h3><table><tr><th>Kode</th><th>Nama</th><th>Komisi%</th><th>Target/bln</th></tr>${SP.map(s=>`<tr><td>${s.sp_code}</td><td>${s.sp_name}</td><td>${s.commission_pct}%</td><td>${fmt(s.monthly_target)}</td></tr>`).join("")}</table>
-  <div class="row">Kode <input id="sp_c" value="SP-001" style="width:80px"> Nama <input id="sp_n" value="Budi">
-  Komisi% <input id="sp_p" value="3" style="width:60px"> Target <input id="sp_t" value="50000000" style="width:130px">
-  <button class="go" onclick="saveSP()">Tambah</button></div></div>
-  <div class="card"><h3>Master Tarif Pajak (PPN)</h3><div id="tax_list">Memuat…</div>
-  <div class="row">Kode <input id="tx_c" value="PPN12" style="width:80px"> Nama <input id="tx_n" value="PPN 12%"> Tarif% <input id="tx_r" value="12" style="width:60px">
-  <button class="go" onclick="saveTX()">Tambah Pajak</button></div></div>
-  <div class="card"><h3>Persetujuan Void (maker-checker)</h3><div id="ap_list">Memuat…</div></div>
-  <div class="card"><h3>Pelanggan (Customer + Akun Piutang)</h3><table><tr><th>Kode</th><th>Nama</th><th>Email</th><th>Akun Piutang</th><th>Limit</th><th>Termin</th></tr>${CUST.map(x=>{const a=COA.find(c=>c.id===x.receivable_account_id);return `<tr><td>${esc(x.customer_code)}</td><td>${esc(x.customer_name)}</td><td>${esc(x.email||"")}</td><td>${a?esc(a.account_code+" "+a.account_name):""}</td><td>${fmt(x.credit_limit||0)}</td><td>${esc((x.terms||"")+" "+(x.term_days||""))}</td></tr>`;}).join("")}</table>
-  <div class="row">Kode <input id="cu_c" value="CUST-002" style="width:90px"> Nama <input id="cu_n" value=""> Email <input id="cu_e" value="" style="width:150px">
-  Akun Piutang <select id="cu_a">${COA.filter(c=>c.account_type==="ASSET").map(c=>`<option value="${c.id}"${c.account_code==="12001"?" selected":""}>${c.account_code} ${c.account_name}</option>`).join("")}</select></div>
-  <div class="row">Limit piutang (0=tak terbatas) <input id="cu_l" value="0" style="width:130px"> Termin <input id="cu_t" value="NET 30" style="width:90px"> Hari <input id="cu_d" value="30" style="width:60px">
-  <button class="go" onclick="saveCU()">Tambah</button></div>
-  <div class="row">Ubah limit: <select id="cu_id">${CUST.map(x=>`<option value="${x.id}">${x.customer_name}</option>`).join("")}</select>
-  Limit <input id="cu_l2" value="0" style="width:130px"> Termin <input id="cu_t2" value="NET 30" style="width:90px"> Hari <input id="cu_d2" value="30" style="width:60px">
-  <button class="go" onclick="saveCUL()">Simpan</button></div></div>
-  <div class="card"><h3>Pemasok (Vendor + Akun Utang)</h3><table><tr><th>Kode</th><th>Nama</th><th>Email</th><th>Akun Utang</th></tr>${VEND.map(x=>{const a=COA.find(c=>c.id===x.payable_account_id);return `<tr><td>${x.vendor_code}</td><td>${x.vendor_name}</td><td>${x.email||""}</td><td>${a?a.account_code+" "+a.account_name:""}</td></tr>`;}).join("")}</table>
-  <div class="row">Kode <input id="vn_c" value="VEND-002" style="width:90px"> Nama <input id="vn_n" value=""> Email <input id="vn_e" value="" style="width:150px">
-  Akun Utang <select id="vn_a">${COA.filter(c=>c.account_type==="LIABILITY").map(c=>`<option value="${c.id}"${c.account_code==="21001"?" selected":""}>${c.account_code} ${c.account_name}</option>`).join("")}</select>
-  <button class="go" onclick="saveVN()">Tambah</button></div></div>
-  <div class="card"><h3>Gudang & Cabang</h3><table><tr><th>Kode</th><th>Gudang</th><th>Cabang</th></tr>${WH.map(w=>{const b=BR.find(x=>x.id===w.branch_id);return `<tr><td>${w.warehouse_code}</td><td>${w.warehouse_name}</td><td>${b?b.branch_code:""}</td></tr>`;}).join("")}</table>
-  <div class="row">Gudang <select id="wb_id">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select>
-  Cabang <select id="wb_br">${BR.map(b=>`<option value="${b.id}">${b.branch_code}</option>`).join("")}</select>
-  <button class="go" onclick="saveWB()">Set Cabang Gudang</button></div></div>
-  <div class="card"><h3>Cabang</h3><table><tr><th>Kode</th><th>Nama</th><th>Gudang</th></tr>${BR.map(b=>`<tr><td>${b.branch_code}</td><td>${b.branch_name}</td><td>${b.n_wh}</td></tr>`).join("")}</table>
-  <div class="row">Kode <input id="br_c" value="CAB-SBY" style="width:90px"> Nama <input id="br_n" value="Cabang Surabaya">
-  <button class="go" onclick="saveBR()">Tambah Cabang</button></div></div>
-  ${ME.role==="ADMIN"?`<div class="card"><h3>Backup & Restore Database</h3><p class="mut">Unduh file database SQLite (jadwalkan berkala, simpan di tempat aman).</p><div class="row"><a href="/api/backup?token=${tok()}"><button class="go">Unduh Backup</button></a></div>
-  <div class="row"><input type="file" id="rs_f" accept=".db"><button class="go" onclick="restore()">Restore dari File</button></div><div id="rs_out" class="mut"></div></div>
-  <div class="card"><h3>User & Peran</h3><table><tr><th>Username</th><th>Nama</th><th>Peran</th><th>Aktif</th></tr>${users.map(u=>`<tr><td>${u.username}</td><td>${u.full_name}</td><td>${u.role}</td><td>${u.is_active?"Ya":"Tidak"}</td></tr>`).join("")}</table>
-  <div class="row">Username <input id="nu_u" value=""> Password <input id="nu_p" value=""> Nama <input id="nu_n" value="">
-  Peran <select id="nu_r"><option>KASIR</option><option>GUDANG</option><option>HRD</option><option>FINANCE</option><option>MANAGER</option><option>ADMIN</option></select>
-  <button class="go" onclick="saveNU()">Tambah User</button></div></div>`:""}
-  ${ME.role!=="KASIR"?`<div class="card"><h3>Log Aktivitas</h3><table><tr><th>Waktu</th><th>User</th><th>Aksi</th></tr>${logs.slice(0,50).map(l=>`<tr><td>${esc(l.created_at||"")}</td><td>${esc(l.username)}</td><td>${esc(l.action)}</td></tr>`).join("")}</table></div>`:""}`;
-  loadTaxAp();
+
+  if(curDetail==="customer")return A.innerHTML=renderCustomerDetail(curDetailId);
+  if(curDetail==="vendor")return A.innerHTML=renderVendorDetail(curDetailId);
+  if(curDetail==="item")return A.innerHTML=renderItemDetail(curDetailId);
+
+  if(curSub==="Keuangan"){
+   A.innerHTML=`<div class="card"><h3>Chart of Accounts (5-digit)</h3>${searchBar("Cari akun...","render()")}<table>${filterRows(COA,searchQ).map(c=>`<tr><td>${c.account_code}</td><td>${c.account_name}</td><td>${c.account_type}</td></tr>`).join("")}</table>
+   <div class="row">Kode <input id="c_c" value="63002"> Nama <input id="c_n" value="Beban Iklan"> <select id="c_t"><option>EXPENSE</option><option>ASSET</option><option>LIABILITY</option><option>EQUITY</option><option>REVENUE</option><option>COGS</option></select>
+   <button class="go" onclick="saveCOA()">Tambah Akun</button></div></div>
+   <div class="card"><h3>Master Tarif Pajak (PPN)</h3><div id="tax_list">Memuat…</div>
+   <div class="row">Kode <input id="tx_c" value="PPN12" style="width:80px"> Nama <input id="tx_n" value="PPN 12%"> Tarif% <input id="tx_r" value="12" style="width:60px">
+   <button class="go" onclick="saveTX()">Tambah Pajak</button></div></div>`;
+   loadTaxAp();
+  }
+  else if(curSub==="Pelanggan"){
+   A.innerHTML=`<div class="card"><h3>Pelanggan (Customer + Akun Piutang)</h3>${searchBar("Cari pelanggan...","render()")}<table><tr><th>Kode</th><th>Nama</th><th>Email</th><th>Akun Piutang</th><th>Limit</th><th>Termin</th></tr>${filterRows(CUST,searchQ).map(x=>{const a=COA.find(c=>c.id===x.receivable_account_id);return `<tr class="clickable-row" onclick="goDetail('customer',${x.id})"><td>${esc(x.customer_code)}</td><td>${esc(x.customer_name)}</td><td>${esc(x.email||"")}</td><td>${a?esc(a.account_code+" "+a.account_name):""}</td><td>${fmt(x.credit_limit||0)}</td><td>${esc((x.terms||"")+" "+(x.term_days||""))}</td></tr>`;}).join("")}</table>
+   <div class="row">Kode <input id="cu_c" value="CUST-002" style="width:90px"> Nama <input id="cu_n" value=""> Email <input id="cu_e" value="" style="width:150px">
+   Akun Piutang <select id="cu_a">${COA.filter(c=>c.account_type==="ASSET").map(c=>`<option value="${c.id}"${c.account_code==="12001"?" selected":""}>${c.account_code} ${c.account_name}</option>`).join("")}</select></div>
+   <div class="row">Limit piutang (0=tak terbatas) <input id="cu_l" value="0" style="width:130px"> Termin <input id="cu_t" value="NET 30" style="width:90px"> Hari <input id="cu_d" value="30" style="width:60px">
+   <button class="go" onclick="saveCU()">Tambah</button></div>
+   <div class="row">Ubah limit: <select id="cu_id">${CUST.map(x=>`<option value="${x.id}">${x.customer_name}</option>`).join("")}</select>
+   Limit <input id="cu_l2" value="0" style="width:130px"> Termin <input id="cu_t2" value="NET 30" style="width:90px"> Hari <input id="cu_d2" value="30" style="width:60px">
+   <button class="go" onclick="saveCUL()">Simpan</button></div></div>`;
+  }
+  else if(curSub==="Vendor"){
+   A.innerHTML=`<div class="card"><h3>Pemasok (Vendor + Akun Utang)</h3>${searchBar("Cari vendor...","render()")}<table><tr><th>Kode</th><th>Nama</th><th>Email</th><th>Akun Utang</th><th>Limit</th></tr>${filterRows(VEND,searchQ).map(x=>{const a=COA.find(c=>c.id===x.payable_account_id);return `<tr class="clickable-row" onclick="goDetail('vendor',${x.id})"><td>${x.vendor_code}</td><td>${x.vendor_name}</td><td>${x.email||""}</td><td>${a?a.account_code+" "+a.account_name:""}</td><td>${fmt(x.credit_limit||0)}</td></tr>`;}).join("")}</table>
+   <div class="row">Kode <input id="vn_c" value="VEND-002" style="width:90px"> Nama <input id="vn_n" value=""> Email <input id="vn_e" value="" style="width:150px">
+   Akun Utang <select id="vn_a">${COA.filter(c=>c.account_type==="LIABILITY").map(c=>`<option value="${c.id}"${c.account_code==="21001"?" selected":""}>${c.account_code} ${c.account_name}</option>`).join("")}</select>
+   <button class="go" onclick="saveVN()">Tambah</button></div></div>
+   <div class="card"><h3>Vendor & Limit Utang (0 = tanpa limit)</h3><table><tr><th>Kode</th><th>Nama</th><th>Limit</th></tr>${VEND.map(v=>`<tr><td>${v.vendor_code}</td><td>${v.vendor_name}</td><td>${fmt(v.credit_limit||0)}</td></tr>`).join("")}</table>
+   <div class="row">Vendor <select id="vl_id">${VEND.map(v=>`<option value="${v.id}">${v.vendor_name}</option>`).join("")}</select>
+   Limit <input id="vl_amt" value="50000000"><button class="go" onclick="saveVL()">Simpan Limit</button></div></div>`;
+  }
+  else if(curSub==="Persediaan"){
+   A.innerHTML=`<div class="card"><h3>Barang, Satuan & Metode HPP</h3>${searchBar("Cari barang...","render()")}<table><tr><th>Kode</th><th>Nama</th><th>Stok (dasar)</th><th>Satuan</th><th>Metode</th><th>Nilai Stok</th><th></th></tr>${filterRows(ITEMS,searchQ).map(i=>`<tr class="clickable-row" onclick="goDetail('item',${i.id})"><td>${i.item_code}</td><td>${i.item_name}</td><td>${i.stock} ${i.base_unit}</td><td>${(i.units||[]).map(u=>u.unit_code+"×"+u.conversion).join(", ")}</td><td>${methOf(i.item_code)}</td><td>${fmt(valOf(i.item_code))}</td><td>${i.item_type==="INVENTORY"?`<button class="go" onclick="event.stopPropagation();setMethod(${i.id},'${methOf(i.item_code)==="FIFO"?"AVERAGE":"FIFO"}')">jadi ${methOf(i.item_code)==="FIFO"?"AVERAGE":"FIFO"}</button>`:""}</td></tr>`).join("")}</table>
+   <div class="row">Barang <select id="u_item">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
+   Satuan <input id="u_code" value="BOX" style="width:70px"> Isi (konversi) <input id="u_conv" value="10" style="width:80px">
+   <button class="go" onclick="saveU()">Tambah Satuan</button></div></div>
+   <div class="card"><h3>Gudang & Cabang</h3><table><tr><th>Kode</th><th>Gudang</th><th>Cabang</th></tr>${WH.map(w=>{const b=BR.find(x=>x.id===w.branch_id);return `<tr><td>${w.warehouse_code}</td><td>${w.warehouse_name}</td><td>${b?b.branch_code:""}</td></tr>`;}).join("")}</table>
+   <div class="row">Gudang <select id="wb_id">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select>
+   Cabang <select id="wb_br">${BR.map(b=>`<option value="${b.id}">${b.branch_code}</option>`).join("")}</select>
+   <button class="go" onclick="saveWB()">Set Cabang Gudang</button></div></div>`;
+  }
+  else if(curSub==="Sales"){
+   A.innerHTML=`<div class="card"><h3>Salesman, Komisi & Target</h3>${searchBar("Cari salesman...","render()")}<table><tr><th>Kode</th><th>Nama</th><th>Komisi%</th><th>Target/bln</th></tr>${filterRows(SP,searchQ).map(s=>`<tr><td>${s.sp_code}</td><td>${s.sp_name}</td><td>${s.commission_pct}%</td><td>${fmt(s.monthly_target)}</td></tr>`).join("")}</table>
+   <div class="row">Kode <input id="sp_c" value="SP-001" style="width:80px"> Nama <input id="sp_n" value="Budi">
+   Komisi% <input id="sp_p" value="3" style="width:60px"> Target <input id="sp_t" value="50000000" style="width:130px">
+   <button class="go" onclick="saveSP()">Tambah</button></div></div>`;
+  }
+  else if(curSub==="Organisasi"){
+   A.innerHTML=`<div class="card"><h3>Cabang</h3>${searchBar("Cari cabang...","render()")}<table><tr><th>Kode</th><th>Nama</th><th>Gudang</th></tr>${filterRows(BR,searchQ).map(b=>`<tr><td>${b.branch_code}</td><td>${b.branch_name}</td><td>${b.n_wh}</td></tr>`).join("")}</table>
+   <div class="row">Kode <input id="br_c" value="CAB-SBY" style="width:90px"> Nama <input id="br_n" value="Cabang Surabaya">
+   <button class="go" onclick="saveBR()">Tambah Cabang</button></div></div>
+   <div class="card"><h3>Karyawan</h3><div id="emp_list">Memuat…</div>
+   <div class="row">Kode <input id="em_c" value="EMP-002" style="width:90px"> Nama <input id="em_n" value="">
+   Jabatan <input id="em_j" value="Staff" style="width:100px"> Gaji <input id="em_g" value="5000000" style="width:120px">
+   Kuota cuti <input id="em_q" value="12" style="width:60px"><button class="go" onclick="saveEM()">Tambah</button></div></div>`;
+   api("/api/employees").then(e=>{window._emps=e;
+    $("#emp_list").innerHTML=`<table><tr><th>Kode</th><th>Nama</th><th>Jabatan</th><th>Gaji</th><th>Sisa cuti</th></tr>${e.map(x=>`<tr><td>${x.emp_code}</td><td>${x.full_name}</td><td>${x.position}</td><td>${fmt(x.base_salary)}</td><td>${x.leave_quota}</td></tr>`).join("")}</table>`;}).catch(e=>{$("#emp_list").textContent=e.message;});
+  }
+  else if(curSub==="Sistem"){
+   A.innerHTML=`${ME.role==="ADMIN"?`<div class="card"><h3>Backup & Restore Database</h3><p class="mut">Unduh file database SQLite (jadwalkan berkala, simpan di tempat aman).</p><div class="row"><a href="/api/backup?token=${tok()}"><button class="go">Unduh Backup</button></a></div>
+   <div class="row"><input type="file" id="rs_f" accept=".db"><button class="go" onclick="restore()">Restore dari File</button></div><div id="rs_out" class="mut"></div></div>
+   <div class="card"><h3>User & Peran</h3><table><tr><th>Username</th><th>Nama</th><th>Peran</th><th>Aktif</th></tr>${users.map(u=>`<tr><td>${u.username}</td><td>${u.full_name}</td><td>${u.role}</td><td>${u.is_active?"Ya":"Tidak"}</td></tr>`).join("")}</table>
+   <div class="row">Username <input id="nu_u" value=""> Password <input id="nu_p" value=""> Nama <input id="nu_n" value="">
+   Peran <select id="nu_r"><option>KASIR</option><option>GUDANG</option><option>HRD</option><option>FINANCE</option><option>MANAGER</option><option>ADMIN</option></select>
+   <button class="go" onclick="saveNU()">Tambah User</button></div></div>`:""}
+   ${ME.role!=="KASIR"?`<div class="card"><h3>Log Aktivitas</h3><table><tr><th>Waktu</th><th>User</th><th>Aksi</th></tr>${logs.slice(0,50).map(l=>`<tr><td>${esc(l.created_at||"")}</td><td>${esc(l.username)}</td><td>${esc(l.action)}</td></tr>`).join("")}</table></div>`:""}`;
+  }
+  else{
+   A.innerHTML=`<div class="card"><h3>Master Data</h3><p class="mut">Pilih sub-menu di panel kiri untuk mengelola data master.</p></div>`;
+  }
  }
  if(cur==="AI & Integrasi"){
   const w=await api("/api/webhooks");
@@ -466,13 +589,10 @@ async function render(){
   <div class="row"><input type="file" id="ocr_f"><button class="go" onclick="ocr()">Baca & Buat Draft</button></div><div id="ocr_out"></div></div>
   <div class="card"><h3>🔗 Webhook / API Builder (WA, E-commerce)</h3>
   <div class="row"><input id="w_e" value="sales.created" style="width:140px"><input id="w_u" value="https://wa.me/62812xxxx?text=invoice" style="width:300px"><button class="go" onclick="saveW()">Tambah</button></div>
-  <pre>${JSON.stringify(w,null,1).slice(0,3000)}</pre></div>
-  <div class="card"><h3>👥 Penggajian + PPh 21</h3>
-  <div class="row">Nama <input id="pr_n" value="Andi"> Tgl <input type="date" id="pr_d" value="${today()}">
-  Bruto <input id="pr_g" value="10000000"> PPh21 (isi sesuai hitungan pajak) <input id="pr_p" value="500000">
-  <button class="go" onclick="savePR()">Posting Gaji (Dr Beban / Cr PPh21+Utang Gaji)</button></div><div id="pr_out"></div></div>
-  <div class="card"><h3>Riwayat Gaji</h3><div id="pr_hist">Memuat…</div></div>
-  <div class="card"><h3>👥 Karyawan</h3><div id="emp_list">Memuat…</div>
+  <pre>${JSON.stringify(w,null,1).slice(0,3000)}</pre></div>`;
+ }
+ if(cur==="HRD"){
+  A.innerHTML=`<div class="card"><h3>👥 Karyawan</h3><div id="emp_list">Memuat…</div>
   <div class="row">Kode <input id="em_c" value="EMP-002" style="width:90px"> Nama <input id="em_n" value="">
   Jabatan <input id="em_j" value="Staff" style="width:100px"> Gaji <input id="em_g" value="5000000" style="width:120px">
   Kuota cuti <input id="em_q" value="12" style="width:60px"><button class="go" onclick="saveEM()">Tambah</button></div></div>
@@ -481,7 +601,12 @@ async function render(){
   Sampai <input type="date" id="lv_t" value="${today()}"> Alasan <input id="lv_r" value="">
   <button class="go" onclick="saveLV()">Ajukan</button></div><div id="lv_list">Memuat…</div></div>
   <div class="card"><h3>📊 Rekap Kehadiran</h3>
-  <div class="row">Bulan <input type="month" id="rc_m" value="${today().slice(0,7)}"><button class="go" onclick="loadRecap()">Tampilkan</button></div><div id="rc_out"></div></div>`;
+  <div class="row">Bulan <input type="month" id="rc_m" value="${today().slice(0,7)}"><button class="go" onclick="loadRecap()">Tampilkan</button></div><div id="rc_out"></div></div>
+  <div class="card"><h3>💰 Penggajian + PPh 21</h3>
+  <div class="row">Nama <input id="pr_n" value="Andi"> Tgl <input type="date" id="pr_d" value="${today()}">
+  Bruto <input id="pr_g" value="10000000"> PPh21 (isi sesuai hitungan pajak) <input id="pr_p" value="500000">
+  <button class="go" onclick="savePR()">Posting Gaji (Dr Beban / Cr PPh21+Utang Gaji)</button></div><div id="pr_out"></div></div>
+  <div class="card"><h3>Riwayat Gaji</h3><div id="pr_hist">Memuat…</div></div>`;
   api("/api/payroll").then(h=>{$("#pr_hist").innerHTML=`<table><tr><th>Tgl</th><th>Nama</th><th>Bruto</th><th>PPh21</th><th>Bersih</th><th>Oleh</th></tr>${h.map(x=>`<tr><td>${x.transaction_date}</td><td>${x.employee_name}</td><td>${fmt(x.gross)}</td><td>${fmt(x.pph21)}</td><td>${fmt(x.net)}</td><td>${x.created_by}</td></tr>`).join("")}</table>`;}).catch(e=>{$("#pr_hist").textContent=e.message;});
   api("/api/employees").then(e=>{window._emps=e;
    $("#emp_list").innerHTML=`<table><tr><th>Kode</th><th>Nama</th><th>Jabatan</th><th>Gaji</th><th>Sisa cuti</th></tr>${e.map(x=>`<tr><td>${x.emp_code}</td><td>${x.full_name}</td><td>${x.position}</td><td>${fmt(x.base_salary)}</td><td>${x.leave_quota}</td></tr>`).join("")}</table>`;
