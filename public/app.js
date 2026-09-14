@@ -154,6 +154,136 @@ function renderCustomerDetail(id){
 }
 window.editCustomer=id=>{curDetail="customer";curDetailId=id;render();};
 window.saveEditCust=async id=>{try{await api("/api/customers/"+id,{method:"PUT",body:JSON.stringify({customer_name:$("#ec_name").value,email:$("#ec_email").value})});await api("/api/customers/limit",{method:"POST",body:JSON.stringify({id,credit_limit:+$("#ec_limit").value,terms:$("#ec_terms").value,term_days:+$("#ec_days").value})});await loadM();alert("Tersimpan");render();}catch(e){alert(e.message)}};
+async function renderSalesInvoiceDetail(id){
+ try{
+  const inv=(await api("/api/sales")).find(x=>x.id===id);
+  if(!inv)return A.innerHTML=`<div class="card">Invoice tidak ditemukan.</div>`;
+  const cust=CUST.find(c=>c.id===inv.customer_id);
+  return `<div class="card">
+   <div class="detail-header"><button class="go" onclick="goBack()">← Kembali</button> <h3 style="margin:0">Faktur Penjualan ${esc(inv.invoice_number)}</h3> ${st(inv.status)}</div>
+   <div class="info-grid">
+    <div class="info-item"><label>Nomor</label><span>${esc(inv.invoice_number)}</span></div>
+    <div class="info-item"><label>Tanggal</label><span>${inv.transaction_date}</span></div>
+    <div class="info-item"><label>Jatuh Tempo</label><span>${inv.due_date||"-"}</span></div>
+    <div class="info-item"><label>Customer</label><span>${esc(inv.customer_name)}</span></div>
+    <div class="info-item"><label>Salesman</label><span>${esc(inv.salesperson||"-")}</span></div>
+    <div class="info-item"><label>Komisi</label><span>${fmt(inv.commission_amount||0)}</span></div>
+   </div>
+   <div class="card" style="margin-top:16px"><h3>Detail Baris</h3>
+    <table><thead><tr><th>Barang</th><th>Deskripsi</th><th>Qty</th><th>Harga</th><th>Diskon</th><th>Total</th></tr></thead>
+    <tbody>${(inv.lines||[]).map(l=>`<tr><td>${esc(l.item_name||"")}</td><td>${esc(l.description||"")}</td><td>${l.unit_qty||l.quantity} ${l.unit_code||""}</td><td>${fmt(l.unit_price)}</td><td>${fmt(l.discount_amount||0)}</td><td>${fmt(l.line_total)}</td></tr>`).join("")}</tbody></table></div>
+   <div class="grid" style="grid-template-columns:1fr 1fr;margin-top:16px">
+    <div class="card"><h3>Ringkasan</h3>
+     <p>Subtotal: <b>${fmt(inv.subtotal)}</b></p>
+     <p>PPN: <b>${fmt(inv.tax_amount)}</b></p>
+     <p><b>Total: ${fmt(inv.total_amount)}</b></p>
+     <p>Tukar+: <b>${fmt(inv.tradein_total||0)}</b></p>
+    </div>
+    <div class="card"><h3>Pembayaran</h3>
+     <p>Dibayar: <b>${fmt(inv.paid)}</b></p>
+     <p>Retur: <b>${fmt(inv.returned||0)}</b></p>
+     <p>Sisa: <b>${fmt(inv.outstanding)}</b></p>
+    </div>
+   </div>
+   <div class="row" style="margin-top:16px">
+    <button class="go" onclick="printInv(${inv.id})">🖨️ Cetak</button>
+    ${inv.status!=="VOID"?`<button class="go danger" onclick="voidSale(${inv.id})">Void</button>`:""}
+   </div>
+  </div>`;
+ }catch(e){return `<div class="card">❌ ${e.message}</div>`;}
+}
+async function renderPurchaseInvoiceDetail(id){
+ try{
+  const inv=(await api("/api/purchases")).find(x=>x.id===id);
+  if(!inv)return A.innerHTML=`<div class="card">Invoice tidak ditemukan.</div>`;
+  return `<div class="card">
+   <div class="detail-header"><button class="go" onclick="goBack()">← Kembali</button> <h3 style="margin:0">Faktur Pembelian ${esc(inv.invoice_number)}</h3> ${st(inv.status)}</div>
+   <div class="info-grid">
+    <div class="info-item"><label>Nomor</label><span>${esc(inv.invoice_number)}</span></div>
+    <div class="info-item"><label>Tanggal</label><span>${inv.transaction_date}</span></div>
+    <div class="info-item"><label>Vendor</label><span>${esc(inv.vendor_name)}</span></div>
+   </div>
+   <div class="card" style="margin-top:16px"><h3>Detail Baris</h3>
+    <table><thead><tr><th>Barang</th><th>Qty</th><th>Harga</th><th>Total</th></tr></thead>
+    <tbody>${(inv.lines||[]).map(l=>`<tr><td>${esc(l.item_name||"")}</td><td>${l.quantity} ${l.unit_code||""}</td><td>${fmt(l.unit_price)}</td><td>${fmt(l.line_total)}</td></tr>`).join("")}</tbody></table></div>
+   <div class="grid" style="grid-template-columns:1fr 1fr;margin-top:16px">
+    <div class="card"><h3>Ringkasan</h3>
+     <p>Subtotal: <b>${fmt(inv.subtotal)}</b></p>
+     <p>PPN: <b>${fmt(inv.tax_amount)}</b></p>
+     <p><b>Total: ${fmt(inv.total_amount)}</b></p>
+    </div>
+    <div class="card"><h3>Pembayaran</h3>
+     <p>Dibayar: <b>${fmt(inv.paid)}</b></p>
+     <p>Retur: <b>${fmt(inv.returned||0)}</b></p>
+     <p>Sisa: <b>${fmt(inv.outstanding)}</b></p>
+    </div>
+   </div>
+   <div class="row" style="margin-top:16px">
+    ${inv.status!=="VOID"?`<button class="go danger" onclick="voidBuy(${inv.id})">Void</button>`:""}
+   </div>
+  </div>`;
+ }catch(e){return `<div class="card">❌ ${e.message}</div>`;}
+}
+async function renderSalesOrderDetail(id){
+ try{
+  const so=(await api("/api/sales-orders")).find(x=>x.id===id);
+  if(!so)return A.innerHTML=`<div class="card">SO tidak ditemukan.</div>`;
+  return `<div class="card">
+   <div class="detail-header"><button class="go" onclick="goBack()">← Kembali</button> <h3 style="margin:0">Pesanan Penjualan ${esc(so.order_number)}</h3> ${st(so.status)}</div>
+   <div class="info-grid">
+    <div class="info-item"><label>Nomor</label><span>${esc(so.order_number)}</span></div>
+    <div class="info-item"><label>Tanggal</label><span>${so.transaction_date}</span></div>
+    <div class="info-item"><label>Customer</label><span>${esc(so.customer_name)}</span></div>
+    <div class="info-item"><label>Total</label><span>${fmt(so.total_amount)}</span></div>
+   </div>
+   <div class="card" style="margin-top:16px"><h3>Detail Baris</h3>
+    <table><thead><tr><th>Barang</th><th>Order</th><th>Terkirim</th><th>Tertagih</th></tr></thead>
+    <tbody>${(so.lines||[]).map(l=>`<tr><td>${esc(l.item_name||"")}</td><td>${l.quantity}</td><td>${l.delivered}</td><td>${l.invoiced}</td></tr>`).join("")}</tbody></table></div>
+   <div class="row" style="margin-top:16px">
+    ${so.status!=="CLOSED"?`<button class="go danger" onclick="closeDoc('/api/sales-orders/close',${so.id})">Close</button>`:""}
+   </div>
+  </div>`;
+ }catch(e){return `<div class="card">❌ ${e.message}</div>`;}
+}
+async function renderPurchaseOrderDetail(id){
+ try{
+  const po=(await api("/api/purchase-orders")).find(x=>x.id===id);
+  if(!po)return A.innerHTML=`<div class="card">PO tidak ditemukan.</div>`;
+  return `<div class="card">
+   <div class="detail-header"><button class="go" onclick="goBack()">← Kembali</button> <h3 style="margin:0">Pesanan Pembelian ${esc(po.order_number)}</h3> ${st(po.status)}</div>
+   <div class="info-grid">
+    <div class="info-item"><label>Nomor</label><span>${esc(po.order_number)}</span></div>
+    <div class="info-item"><label>Tanggal</label><span>${po.transaction_date}</span></div>
+    <div class="info-item"><label>Vendor</label><span>${esc(po.vendor_name)}</span></div>
+    <div class="info-item"><label>Total</label><span>${fmt(po.total_amount)}</span></div>
+   </div>
+   <div class="card" style="margin-top:16px"><h3>Detail Baris</h3>
+    <table><thead><tr><th>Barang</th><th>Order</th><th>Diterima</th><th>Tertagih</th></tr></thead>
+    <tbody>${(po.lines||[]).map(l=>`<tr><td>${esc(l.item_name||"")}</td><td>${l.quantity}</td><td>${l.received}</td><td>${l.billed}</td></tr>`).join("")}</tbody></table></div>
+   <div class="row" style="margin-top:16px">
+    ${po.status!=="CLOSED"?`<button class="go danger" onclick="closeDoc('/api/purchase-orders/close',${po.id})">Close</button>`:""}
+   </div>
+  </div>`;
+ }catch(e){return `<div class="card">❌ ${e.message}</div>`;}
+}
+async function renderJournalDetail(id){
+ try{
+  const j=(await api("/api/journals")).find(x=>x.id===id);
+  if(!j)return A.innerHTML=`<div class="card">Jurnal tidak ditemukan.</div>`;
+  return `<div class="card">
+   <div class="detail-header"><button class="go" onclick="goBack()">← Kembali</button> <h3 style="margin:0">Jurnal ${esc(j.journal_number)}</h3> ${st(j.status)}</div>
+   <div class="info-grid">
+    <div class="info-item"><label>Nomor</label><span>${esc(j.journal_number)}</span></div>
+    <div class="info-item"><label>Tanggal</label><span>${j.transaction_date}</span></div>
+    <div class="info-item"><label>Deskripsi</label><span>${esc(j.description)}</span></div>
+   </div>
+   <div class="card" style="margin-top:16px"><h3>Detail Jurnal</h3>
+    <table><thead><tr><th>Kode</th><th>Akun</th><th>Debit</th><th>Kredit</th></tr></thead>
+    <tbody>${(j.lines||[]).map(l=>`<tr><td>${esc(l.account_code)}</td><td>${esc(l.account_name)}</td><td>${fmt(l.debit)}</td><td>${fmt(l.credit)}</td></tr>`).join("")}</tbody>
+    <tfoot><tr><td colspan="2"><b>Total</b></td><td><b>${fmt((j.lines||[]).reduce((a,l)=>a+l.debit,0))}</b></td><td><b>${fmt((j.lines||[]).reduce((a,l)=>a+l.credit,0))}</b></td></tr></tfoot></table></div>
+  </div>`;
+ }catch(e){return `<div class="card">❌ ${e.message}</div>`;}
+}
 function renderVendorDetail(id){
  const v=VEND.find(x=>x.id===id);if(!v)return A.innerHTML=`<div class="card">Vendor tidak ditemukan.</div>`;
  const a=COA.find(x=>x.id===v.payable_account_id);
@@ -210,10 +340,15 @@ function renderItemDetail(id){
 window.editItem=id=>{curDetail="item";curDetailId=id;render();};
 window.saveEditItem=async id=>{try{await api("/api/items/"+id,{method:"PUT",body:JSON.stringify({item_name:$("#ei_name").value,purchase_price:+$("#ei_bp").value,sales_price:+$("#ei_sp").value,item_type:$("#ei_type").value})});await loadM();alert("Tersimpan");render();}catch(e){alert(e.message)}};
 window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="+id);curDetail="stockcard";curDetailId=id;window._stockCardData=r;render();}catch(e){alert(e.message)}};
-async function render(){
- const A=$("#app");
- try{
- if(cur==="Dashboard"){
+ async function render(){
+  const A=$("#app");
+  try{
+  if(curDetail==="sales-invoice"){A.innerHTML=await renderSalesInvoiceDetail(curDetailId);return;}
+  if(curDetail==="purchase-invoice"){A.innerHTML=await renderPurchaseInvoiceDetail(curDetailId);return;}
+  if(curDetail==="sales-order"){A.innerHTML=await renderSalesOrderDetail(curDetailId);return;}
+  if(curDetail==="purchase-order"){A.innerHTML=await renderPurchaseOrderDetail(curDetailId);return;}
+  if(curDetail==="journal"){A.innerHTML=await renderJournalDetail(curDetailId);return;}
+  if(cur==="Dashboard"){
    const d=await api("/api/dashboard");const f=await api("/api/forecast");
    A.innerHTML=`<div class="grid">
     <div class="kpi kpi-info"><div class="kpi-icon">📈</div><div class="kpi-label">Omzet</div><b>${fmt(d.omzet)}</b></div>
@@ -274,7 +409,7 @@ async function render(){
    <button class="go" onclick="copySQ()">Salin</button></div>
    <div id="oo_wrap"></div>
    <button class="go" onclick="saveO()">Simpan SO</button></div>
-   <div class="card"><h3>Riwayat SO</h3>${so.map(x=>`<details><summary><b>${x.order_number}</b> ${x.transaction_date} ${x.customer_name} ${fmt(x.total_amount)} ${st(x.status)}</summary>
+   <div class="card"><h3>Riwayat SO</h3>${so.map(x=>`<details><summary class="clickable-row" onclick="goDetail('sales-order',${x.id})" style="cursor:pointer"><b>${x.order_number}</b> ${x.transaction_date} ${x.customer_name} ${fmt(x.total_amount)} ${st(x.status)}</summary>
    <table><tr><th>Barang</th><th>Deskripsi</th><th>Order</th><th>Terkirim</th><th>Tertagih</th></tr>${x.lines.map(l=>`<tr><td>${l.item_name}</td><td>${l.description||""}</td><td>${l.quantity}</td><td>${l.delivered}</td><td>${l.invoiced}</td></tr>`).join("")}</table>
    ${x.status!=="CLOSED"?`<button class="go danger" onclick="closeDoc('/api/sales-orders/close',${x.id})">Close</button>`:""}</details>`).join("")}</div>`;
   }
@@ -311,7 +446,7 @@ async function render(){
   Qty <input id="ti_qty" value="1" style="width:60px"> Nilai kesepakatan <input id="ti_val" value="0" style="width:130px">
   Ket <input id="ti_note" value=""></div></details></div>
   <div class="card"><h3>Riwayat Invoice</h3><table><tr><th>No</th><th>Tgl</th><th>Customer</th><th>Sales</th><th>Total</th><th>Komisi</th><th>Tukar+</th><th>Sisa</th><th>Status</th><th></th></tr>
-  ${inv.map(x=>`<tr><td>${x.invoice_number}</td><td>${x.transaction_date}</td><td>${x.customer_name}</td><td>${x.salesperson||"-"}</td><td>${fmt(x.total_amount)}</td><td>${fmt(x.commission_amount||0)}</td><td>${fmt(x.tradein_total||0)}</td><td>${fmt(x.outstanding)}</td><td>${st(x.status)}</td><td>${x.status!=="VOID"?`<button class="go danger" onclick="voidSale(${x.id})">Void</button>`:""} <button class="go" onclick="printInv(${x.id})">Cetak</button></td></tr>`).join("")}</table></div>`;
+   ${inv.map(x=>`<tr class="clickable-row" onclick="goDetail('sales-invoice',${x.id})"><td><b>${x.invoice_number}</b></td><td>${x.transaction_date}</td><td>${x.customer_name}</td><td>${x.salesperson||"-"}</td><td>${fmt(x.total_amount)}</td><td>${fmt(x.commission_amount||0)}</td><td>${fmt(x.tradein_total||0)}</td><td>${fmt(x.outstanding)}</td><td>${st(x.status)}</td><td>${x.status!=="VOID"?`<button class="go danger" onclick="voidSale(${x.id})">Void</button>`:""} <button class="go" onclick="printInv(${x.id})">Cetak</button></td></tr>`).join("")}</table></div>`;
   }
   if(sub==="return"){
   h+=`<div class="card"><h3>Retur Penjualan (parsial, stok kembali + jurnal)</h3>
@@ -352,7 +487,7 @@ async function render(){
    <button class="go" onclick="copyPR()">Salin</button></div>
    <div id="og_wrap"></div>
    <button class="go" onclick="saveO2()">Simpan PO</button></div>
-   <div class="card"><h3>Riwayat PO</h3>${po.map(x=>`<details><summary><b>${x.order_number}</b> ${x.transaction_date} ${x.vendor_name} ${fmt(x.total_amount)} ${st(x.status)}</summary>
+   <div class="card"><h3>Riwayat PO</h3>${po.map(x=>`<details><summary class="clickable-row" onclick="goDetail('purchase-order',${x.id})" style="cursor:pointer"><b>${x.order_number}</b> ${x.transaction_date} ${x.vendor_name} ${fmt(x.total_amount)} ${st(x.status)}</summary>
    <table><tr><th>Barang</th><th>Order</th><th>Diterima</th><th>Tertagih</th></tr>${x.lines.map(l=>`<tr><td>${l.item_name}</td><td>${l.quantity}</td><td>${l.received}</td><td>${l.billed}</td></tr>`).join("")}</table>
    ${x.status!=="CLOSED"?`<button class="go danger" onclick="closeDoc('/api/purchase-orders/close',${x.id})">Close</button>`:""}</details>`).join("")}</div>`;
   }
@@ -383,7 +518,7 @@ async function render(){
   <div id="pg_wrap"></div><div id="plines" class="mut"></div>
   <button class="go" onclick="saveBuy()">Simpan & Tambah Stok</button></div>
   <div class="card"><h3>Riwayat Tagihan Vendor</h3><table><tr><th>No</th><th>Tgl</th><th>Vendor</th><th>Total</th><th>Dibayar</th><th>Retur</th><th>Sisa</th><th>Status</th><th></th></tr>
-  ${inv.map(x=>`<tr><td>${x.invoice_number}</td><td>${x.transaction_date}</td><td>${x.vendor_name}</td><td>${fmt(x.total_amount)}</td><td>${fmt(x.paid)}</td><td>${fmt(x.returned||0)}</td><td>${fmt(x.outstanding)}</td><td>${st(x.status)}</td><td>${x.status!=="VOID"?`<button class="go danger" onclick="voidBuy(${x.id})">Void</button>`:""}</td></tr>`).join("")}</table></div>`;
+   ${inv.map(x=>`<tr class="clickable-row" onclick="goDetail('purchase-invoice',${x.id})"><td><b>${x.invoice_number}</b></td><td>${x.transaction_date}</td><td>${x.vendor_name}</td><td>${fmt(x.total_amount)}</td><td>${fmt(x.paid)}</td><td>${fmt(x.returned||0)}</td><td>${fmt(x.outstanding)}</td><td>${st(x.status)}</td><td>${x.status!=="VOID"?`<button class="go danger" onclick="voidBuy(${x.id})">Void</button>`:""}</td></tr>`).join("")}</table></div>`;
   }
   if(sub==="return"){
   h+=`<div class="card"><h3>Retur Pembelian (parsial, stok keluar + jurnal)</h3>
@@ -446,7 +581,7 @@ async function render(){
   A.innerHTML=`<div class="card"><h3>Jurnal Umum (wajib seimbang D=K)</h3>
   <div class="row">Tgl <input type="date" id="j_d" value="${today()}"> Ket <input id="j_desc" value="Jurnal penyesuaian"> Akun ${coaSel("j_a")} D <input id="j_db" value="100000" style="width:100px"> K <input id="j_cr" value="0" style="width:100px">
   <button class="go" onclick="addJ()">+ baris</button></div><div id="jlines"></div><button class="go" onclick="saveJ()">Posting Jurnal</button></div>
-  <div class="card"><h3>Histori (${j.length})</h3>${j.slice(0,30).map(x=>`<details><summary><b>${x.journal_number}</b> ${x.transaction_date} — ${x.description} [${x.status}]</summary><table>${x.lines.map(l=>`<tr><td>${l.account_code}</td><td>${l.account_name}</td><td>${fmt(l.debit)}</td><td>${fmt(l.credit)}</td></tr>`).join("")}</table></details>`).join("")}</div>
+   <div class="card"><h3>Histori (${j.length})</h3>${j.slice(0,30).map(x=>`<details><summary class="clickable-row" onclick="goDetail('journal',${x.id})" style="cursor:pointer"><b>${x.journal_number}</b> ${x.transaction_date} — ${x.description} [${x.status}]</summary><table>${x.lines.map(l=>`<tr><td>${l.account_code}</td><td>${l.account_name}</td><td>${fmt(l.debit)}</td><td>${fmt(l.credit)}</td></tr>`).join("")}</table></details>`).join("")}</div>
   <div class="card"><h3>🔒 Tutup Buku / Kunci Periode (admin)</h3>
   <div class="row">Tahun <input id="pe_y" value="${new Date().getFullYear()-1}" style="width:80px"><button class="go danger" onclick="closeYear()">Tutup & Kunci</button></div>
   <div id="locks" class="mut">Memuat…</div></div>`;
