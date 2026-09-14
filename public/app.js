@@ -218,10 +218,11 @@ async function renderSalesInvoiceDetail(id){
      <p>Sisa: <b>${fmt(inv.outstanding)}</b></p>
     </div>
    </div>
-   <div class="row" style="margin-top:16px">
-    <button class="go" onclick="printInv(${inv.id})">🖨️ Cetak</button>
-    ${inv.status!=="VOID"?`<button class="go danger" onclick="voidSale(${inv.id})">Void</button>`:""}
-   </div>
+    <div class="row" style="margin-top:16px">
+     <button class="go" onclick="printInv(${inv.id})">🖨️ Cetak</button>
+     <button class="go" onclick="exportInvoicePDF(${inv.id})">📄 Export PDF</button>
+     ${inv.status!=="VOID"?`<button class="go danger" onclick="voidSale(${inv.id})">Void</button>`:""}
+    </div>
   </div>`;
  }catch(e){return `<div class="card">❌ ${e.message}</div>`;}
 }
@@ -426,7 +427,7 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
   const sub=window._psub||"invoice";
   const inv=await api("/api/sales");const rets=await api("/api/returns?type=SALES");
   const sq=await api("/api/quotations");const so=await api("/api/sales-orders");const dn=await api("/api/deliveries");
-  let h=`<div class="row">${[["quotation","Penawaran"],["order","Pesanan"],["delivery","Surat Jalan"],["invoice","Faktur"],["return","Retur"]].map(t=>`<button class="go"${sub===t[0]?"":' style="opacity:.55"'} onclick="_psub='${t[0]}';render()">${t[1]}</button>`).join("")}</div>`;
+   let h=`<div class="row">${[["quotation","Penawaran"],["order","Pesanan"],["delivery","Surat Jalan"],["invoice","Faktur"],["return","Retur"],["cn","CN (Credit Note)"],["dn","DN (Debit Note)"]].map(t=>`<button class="go"${sub===t[0]?"":' style="opacity:.55"'} onclick="_psub='${t[0]}';render()">${t[1]}</button>`).join("")}</div>`;
   if(sub==="quotation"){
    h+=`<div class="card"><h3>Penawaran Penjualan (non-posting)</h3>
    <div class="row">Customer <select id="q_cust">${CUST.map(c=>`<option value="${c.id}">${c.customer_name}</option>`).join("")}</select>
@@ -493,13 +494,59 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
   Gudang <select id="rs_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select>
   Qty <input id="rs_qty" value="1" style="width:60px"> Tgl <input type="date" id="rs_date" value="${today()}">
   <button class="go" onclick="saveRS()">Catat Retur</button></div>
-  <table><tr><th>No Retur</th><th>Invoice</th><th>Tgl</th><th>Total</th></tr>${rets.map(r=>`<tr><td>${r.return_number}</td><td>${r.invoice_number}</td><td>${r.transaction_date}</td><td>${fmt(r.total_amount)}</td></tr>`).join("")}</table></div>`;
+   <table><tr><th>No Retur</th><th>Invoice</th><th>Tgl</th><th>Total</th></tr>${rets.map(r=>`<tr><td>${r.return_number}</td><td>${r.invoice_number}</td><td>${r.transaction_date}</td><td>${fmt(r.total_amount)}</td></tr>`).join("")}</table></div>`;
+  }
+  if(sub==="cn"){
+   h+=`<div class="grid" style="grid-template-columns:1fr 1fr;gap:24px">
+   <div class="card"><h3><span class="card-icon">📝</span>Form Credit Note</h3>
+    <div class="grid grid-2">
+     <div class="field"><label>Tanggal</label><input id="cn_d" type="date"></div>
+     <div class="field"><label>Pelanggan</label><select id="cn_cust"><option value="">Pilih...</option>${CUST.map(x=>`<option value="${x.id}">${esc(x.customer_name)}</option>`).join("")}</select></div>
+    </div>
+    <div class="field"><label>Alasan / Deskripsi</label><input id="cn_desc" placeholder="Deskripsi credit note"></div>
+    <div class="card" style="background:#004d400f;border:1px solid #004d4033">
+     <div style="display:flex;align-items:center;gap:12px">
+      <div class="field" style="flex:2"><label>Item</label><select id="cn_it"><option value="">Non-Inventory</option>${ITEMS.map(x=>`<option value="${x.id}">${esc(x.item_name)} [${esc(x.item_code)}]</option>`).join("")}</select></div>
+      <div class="field" style="flex:1"><label>Qty</label><input id="cn_q" type="number" min="1" value="1"></div>
+      <div class="field" style="flex:1"><label>Harga</label><input id="cn_pr" type="number" min="0" value="0"></div>
+      <button class="go danger" style="margin-top:20px" onclick="addCNLine()">+ Tambah</button>
+     </div>
+    </div>
+    <div class="field"><label>Deskripsi Baris</label><input id="cn_ldesc"></div>
+    <div id="cn_preview" class="mut"></div>
+    <button class="go" onclick="saveCN()" style="width:100%">Simpan Credit Note</button>
+   </div>
+   <div class="card"><h3>Daftar Credit Note</h3><div id="cn_list"></div></div></div>`;
+  }
+  if(sub==="dn"){
+   h+=`<div class="grid" style="grid-template-columns:1fr 1fr;gap:24px">
+   <div class="card"><h3><span class="card-icon">📝</span>Form Debit Note</h3>
+    <div class="grid grid-2">
+     <div class="field"><label>Tanggal</label><input id="dn_d" type="date"></div>
+     <div class="field"><label>Vendor</label><select id="dn_ven"><option value="">Pilih...</option>${VEND.map(x=>`<option value="${x.id}">${esc(x.vendor_name)}</option>`).join("")}</select></div>
+    </div>
+    <div class="field"><label>Alasan / Deskripsi</label><input id="dn_desc" placeholder="Deskripsi debit note"></div>
+    <div class="card" style="background:#7f1d1d0f;border:1px solid #7f1d1d33">
+     <div style="display:flex;align-items:center;gap:12px">
+      <div class="field" style="flex:2"><label>Item</label><select id="dn_it"><option value="">Non-Inventory</option>${ITEMS.map(x=>`<option value="${x.id}">${esc(x.item_name)} [${esc(x.item_code)}]</option>`).join("")}</select></div>
+      <div class="field" style="flex:1"><label>Qty</label><input id="dn_q" type="number" min="1" value="1"></div>
+      <div class="field" style="flex:1"><label>Harga</label><input id="dn_pr" type="number" min="0" value="0"></div>
+      <button class="go danger" style="margin-top:20px" onclick="addDNLine()">+ Tambah</button>
+     </div>
+    </div>
+    <div class="field"><label>Deskripsi Baris</label><input id="dn_ldesc"></div>
+    <div id="dn_preview" class="mut"></div>
+    <button class="go" onclick="saveDN()" style="width:100%">Simpan Debit Note</button>
+   </div>
+   <div class="card"><h3>Daftar Debit Note</h3><div id="dn_list"></div></div></div>`;
   }
   A.innerHTML=h;
   if(sub==="quotation"){window._ql=[];unitCh('q');}
   if(sub==="order"){gridStart('oo',{type:'sale',wh:false,disc:true});window._sq=sq;}
   if(sub==="delivery"){window._dl=[];unitCh('d');window._so=so.filter(x=>x.status!=="CLOSED");}
-  if(sub==="invoice"){gridStart('sg',{type:'sale',wh:false,disc:true});window._sl=[];window._dn=dn;window._so2=so;}
+   if(sub==="invoice"){gridStart('sg',{type:'sale',wh:false,disc:true});window._sl=[];window._dn=dn;window._so2=so;}
+   if(sub==="cn"){cnCLines=[];api("/api/sales").then(inv=>{const el=$("#cn_list");if(el)el.innerHTML=inv.filter(x=>x.status==='OPEN').map(x=>`<div style="padding:8px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center"><div><b>${esc(x.invoice_number)}</b> - ${esc(x.customer_name)} - ${fmt(x.outstanding)}</div><button class="go" onclick="createCNFromInvoice(${x.id})">Buat CN</button></div>`).join("")||"<div class='empty-state'>Belum ada faktur</div>";});}
+   if(sub==="dn"){dnDLines=[];api("/api/purchases").then(inv=>{const el=$("#dn_list");if(el)el.innerHTML=inv.filter(x=>x.status==='OPEN').map(x=>`<div style="padding:8px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center"><div><b>${esc(x.invoice_number)}</b> - ${esc(x.vendor_name)} - ${fmt(x.outstanding)}</div><button class="go" onclick="createDNFromInvoice(${x.id})">Buat DN</button></div>`).join("")||"<div class='empty-state'>Belum ada faktur</div>";});}
  }
  if(cur==="Pembelian"){
   const sub=window._bsub||"invoice";
@@ -954,9 +1001,61 @@ window.printInv=async id=>{try{const inv=(await api("/api/sales")).find(x=>x.id=
  <table><tr><th>Barang</th><th>Deskripsi</th><th>Qty</th><th>Harga</th><th>Diskon</th><th>Total</th></tr>${inv.lines.map(l=>`<tr><td>${l.item_name||l.item_id}</td><td>${l.description||""}</td><td>${l.unit_qty||l.quantity} ${l.unit_code||""}</td><td>${fmt(l.unit_price)}</td><td>${fmt(l.discount_amount)}</td><td>${fmt(l.line_total)}</td></tr>`).join("")}</table>
  <p>Subtotal: ${fmt(inv.subtotal)}<br>PPN: ${fmt(inv.tax_amount)}<br><b>Total: ${fmt(inv.total_amount)}</b><br>Dibayar: ${fmt(inv.paid)} | Retur: ${fmt(inv.returned||0)} | Tukar+: ${fmt(inv.tradein_total||0)} | <b>Sisa: ${fmt(inv.outstanding)}</b></p>
  <script>onload=()=>{print();}<\/script></body></html>`);w.document.close();}catch(e){alert(e.message)}};
+window.exportInvoicePDF=async id=>{
+ try{
+  const inv=(await api("/api/sales")).find(x=>x.id===id);
+  if(!inv)return alert("Invoice tidak ditemukan");
+  const html=`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Faktur ${esc(inv.invoice_number)}</title>
+<style>
+ body{font-family:Arial,sans-serif;margin:20px;font-size:12px}
+ .header{display:flex;justify-content:space-between;border-bottom:3px solid #1a1a2e;padding-bottom:10px;margin-bottom:20px}
+ .title{font-size:24px;font-weight:bold;color:#1a1a2e}
+ table{width:100%;border-collapse:collapse;margin:10px 0}
+ th,td{padding:8px;border:1px solid #ddd;text-align:left}
+ th{background:#f5f5f5;font-weight:bold}
+ .total{text-align:right;font-size:14px;margin-top:20px}
+ .footer{margin-top:40px;border-top:1px solid #ccc;padding-top:10px;font-size:10px;color:#666}
+</style></head><body>
+<div class="header">
+ <div><div class="title">ERP-MSP</div><div>Sistem Akuntansi Modern</div></div>
+ <div style="text-align:right"><div style="font-size:18px;font-weight:bold">FAKTUR PENJUALAN</div>
+ <div>${esc(inv.invoice_number)}</div><div>${inv.transaction_date}</div><div>Jatuh Tempo: ${inv.due_date||"-"}</div></div>
+</div>
+<div style="display:flex;justify-content:space-between;margin-bottom:20px">
+ <div><b>Kepada:</b><br>${esc(inv.customer_name)}</div>
+ <div><b>Salesman:</b> ${esc(inv.salesperson||"-")}</div>
+</div>
+<table><thead><tr><th>Barang</th><th>Qty</th><th>Harga</th><th>Diskon</th><th>Total</th></tr></thead>
+<tbody>${(inv.lines||[]).map(l=>`<tr><td>${esc(l.item_name||l.description||"")}</td><td>${l.unit_qty||l.quantity}</td><td>${fmt(l.unit_price)}</td><td>${fmt(l.discount_amount||0)}</td><td>${fmt(l.line_total)}</td></tr>`).join("")}</tbody></table>
+<div class="total">
+ <p>Subtotal: ${fmt(inv.subtotal)}</p>
+ <p>PPN: ${fmt(inv.tax_amount)}</p>
+ <p><b>TOTAL: ${fmt(inv.total_amount)}</b></p>
+ <p>Dibayar: ${fmt(inv.paid)}</p>
+ <p><b>Sisa Piutang: ${fmt(inv.outstanding)}</b></p>
+</div>
+<div class="footer">
+ <p>Dicetak: ${new Date().toLocaleString("id-ID")} | ERP-MSP</p>
+</div></body></html>`;
+  const win=window.open('','_blank');
+  win.document.write(html);
+  win.document.close();
+  win.print();
+ }catch(e){alert("Gagal cetak: "+e.message);}
+};
 window.csv=(name,rows)=>{const q2=v=>`"${String(v??"").replace(/"/g,'""')}"`;
  const blob=new Blob([rows.map(r=>r.map(q2).join(",")).join("\n")],{type:"text/csv"});
  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();};
+function periodeFilter(monthInputId,yearInputId,records){
+ const m=+$(monthInputId).value;
+ const y=+$(yearInputId).value;
+ if(!m||!y)return records;
+ return records.filter(r=>{
+  const d=new Date(r.transaction_date);
+  return d.getMonth()+1===m&&d.getFullYear()===y;
+ });
+}
 window.csvTB=async()=>{const tb=await api("/api/reports/trial-balance");csv("trial-balance.csv",[["Kode","Akun","Tipe","Debit","Kredit"],...tb.map(r=>[r.account_code,r.account_name,r.account_type,r.d,r.k])]);};
 window.csvStock=async()=>{const s=await api("/api/stock");csv("stok.csv",[["Kode","Barang","Gudang","Stok","AvgCost","Nilai"],...s.map(x=>[x.item_code,x.item_name,x.warehouse,x.stock,x.avg_cost,x.value])]);};
 window.saveU=async()=>{try{await api("/api/units",{method:"POST",body:JSON.stringify({item_id:+$("#u_item").value,unit_code:$("#u_code").value,conversion:+$("#u_conv").value})});loadM().then(render);}catch(e){alert(e.message)}};
@@ -982,6 +1081,66 @@ window.addAllocRefresh=()=>{const t=_al;_al=[];const keep=$("#k_alloc").value;$(
  $("#alocs").innerHTML=_al.map((a,i)=>`<div>#${a.invoice_id} — ${fmt(a.amount)} <a href="#" onclick="_al.splice(${i},1);addAllocRefresh();return false">hapus</a></div>`).join("")+(_al.length?`<b>Total: ${fmt(_al.reduce((a,x)=>a+x.amount,0))}</b>`:"");};
 window.voidSale=async id=>{if(!confirm("Void invoice ini? Jurnal dibalik & stok dikembalikan."))return;try{const r=await api("/api/sales/void",{method:"POST",body:JSON.stringify({id,date:today()})});alert(r.need_approval?"Diajukan, menunggu MANAGER": "Invoice di-void");render();}catch(e){alert(e.message)}};
 window.voidBuy=async id=>{if(!confirm("Void tagihan ini? Jurnal dibalik & stok dikurangi."))return;try{const r=await api("/api/purchases/void",{method:"POST",body:JSON.stringify({id,date:today()})});alert(r.need_approval?"Diajukan, menunggu MANAGER":"Tagihan di-void");render();}catch(e){alert(e.message)}};
+let cnCLines=[];
+function addCNLine(){
+ const item_id=+$("#cn_it").value||null;
+ const qty=+$("#cn_q").value;
+ const price=+$("#cn_pr").value;
+ const desc=esc($("#cn_ldesc").value||"");
+ const name=item_id?(ITEMS.find(x=>x.id===item_id)?.item_name||""):"";
+ cnCLines.push({item_id,quantity:qty,unit_price:price,line_total:qty*price,description:desc,item_name:name});
+ renderCNPreview();
+}
+function renderCNPreview(){
+ const sum=cnCLines.reduce((a,l)=>a+l.line_total,0);
+ const el=$("#cn_preview");
+ if(el)el.innerHTML=cnCLines.length?`<table><tr><th>Item</th><th>Qty</th><th>Harga</th><th>Total</th><th></th></tr>${cnCLines.map((l,i)=>`<tr><td>${esc(l.item_name||"Non-Inventory")}</td><td>${l.quantity}</td><td>${fmt(l.unit_price)}</td><td>${fmt(l.line_total)}</td><td><button class="row-del" onclick="cnCLines.splice(${i},1);renderCNPreview()">×</button></td></tr>`).join("")}</table><p>Total: <b>${fmt(sum)}</b></p>`:"";
+}
+window.saveCN=async()=>{
+ try{showLoading("#app button.go","Menyimpan...");
+ await api("/api/returns",{method:"POST",body:JSON.stringify({type:"CUSTOMER",customer_id:+$("#cn_cust").value,date:$("#cn_d").value,description:$("#cn_desc").value,lines:cnCLines.map(l=>({item_id:l.item_id,quantity:l.quantity,unit_price:l.unit_price,line_total:l.line_total,description:l.description}))})});
+ alert("Credit Note tersimpan");cnCLines=[];render();}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}
+};
+window.createCNFromInvoice=async(invId)=>{
+ try{const inv=(await api("/api/sales")).find(x=>x.id===invId);
+ if(!inv)return alert("Invoice tidak ditemukan");
+ $("#cn_cust").value=inv.customer_id;
+ $("#cn_d").value=inv.transaction_date;
+ $("#cn_desc").value="CN dari "+inv.invoice_number;
+ cnCLines=(inv.lines||[]).map(l=>({item_id:l.item_id,quantity:l.quantity,unit_price:l.unit_price,line_total:l.line_total,description:l.description||"",item_name:l.item_name||""}));
+ renderCNPreview();
+ alert("Data invoice "+inv.invoice_number+" dimuat. Simpan Credit Note.");}catch(e){alert(e.message);}
+};
+let dnDLines=[];
+function addDNLine(){
+ const item_id=+$("#dn_it").value||null;
+ const qty=+$("#dn_q").value;
+ const price=+$("#dn_pr").value;
+ const desc=esc($("#dn_ldesc").value||"");
+ const name=item_id?(ITEMS.find(x=>x.id===item_id)?.item_name||""):"";
+ dnDLines.push({item_id,quantity:qty,unit_price:price,line_total:qty*price,description:desc,item_name:name});
+ renderDNPreview();
+}
+function renderDNPreview(){
+ const sum=dnDLines.reduce((a,l)=>a+l.line_total,0);
+ const el=$("#dn_preview");
+ if(el)el.innerHTML=dnDLines.length?`<table><tr><th>Item</th><th>Qty</th><th>Harga</th><th>Total</th><th></th></tr>${dnDLines.map((l,i)=>`<tr><td>${esc(l.item_name||"Non-Inventory")}</td><td>${l.quantity}</td><td>${fmt(l.unit_price)}</td><td>${fmt(l.line_total)}</td><td><button class="row-del" onclick="dnDLines.splice(${i},1);renderDNPreview()">×</button></td></tr>`).join("")}</table><p>Total: <b>${fmt(sum)}</b></p>`:"";
+}
+window.saveDN=async()=>{
+ try{showLoading("#app button.go","Menyimpan...");
+ await api("/api/returns",{method:"POST",body:JSON.stringify({type:"VENDOR",vendor_id:+$("#dn_ven").value,date:$("#dn_d").value,description:$("#dn_desc").value,lines:dnDLines.map(l=>({item_id:l.item_id,quantity:l.quantity,unit_price:l.unit_price,line_total:l.line_total,description:l.description}))})});
+ alert("Debit Note tersimpan");dnDLines=[];render();}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}
+};
+window.createDNFromInvoice=async(invId)=>{
+ try{const inv=(await api("/api/purchases")).find(x=>x.id===invId);
+ if(!inv)return alert("Invoice tidak ditemukan");
+ $("#dn_ven").value=inv.vendor_id;
+ $("#dn_d").value=inv.transaction_date;
+ $("#dn_desc").value="DN dari "+inv.invoice_number;
+ dnDLines=(inv.lines||[]).map(l=>({item_id:l.item_id,quantity:l.quantity,unit_price:l.unit_price,line_total:l.line_total,description:l.description||"",item_name:l.item_name||""}));
+ renderDNPreview();
+ alert("Data invoice "+inv.invoice_number+" dimuat. Simpan Debit Note.");}catch(e){alert(e.message);}
+};
 window.opname=async()=>{try{const r=await api("/api/stock/opname",{method:"POST",body:JSON.stringify({item_id:+$("#o_item").value,warehouse_id:+$("#o_wh").value,actual_qty:+$("#o_qty").value,date:$("#o_date").value})});alert("Selisih "+r.diff+" ("+fmt(r.value)+")");loadM().then(render);}catch(e){alert(e.message)}};
 window.transfer=async()=>{try{await api("/api/stock/transfer",{method:"POST",body:JSON.stringify({item_id:+$("#t_item").value,from_warehouse:+$("#t_from").value,to_warehouse:+$("#t_to").value,qty:+$("#t_qty").value,date:$("#t_date").value})});alert("Stok dipindahkan");loadM().then(render);}catch(e){alert(e.message)}};
 window.saveJ=async()=>{
