@@ -75,6 +75,39 @@ window.goDetail=(type,id)=>{curDetail=type;curDetailId=id;render();};
 window.goBack=()=>{curDetail=null;curDetailId=null;render();};
 function searchBar(placeholder,onsrch){return `<div class="search-bar"><input type="text" id="search_input" placeholder="${placeholder}" value="${esc(searchQ)}" oninput="searchQ=this.value" onkeyup="if(event.key==='Enter'){${onsrch}}"><button class="go info" onclick="${onsrch}">Cari</button></div>`;}
 function filterRows(rows,q){if(!q)return rows;const lq=q.toLowerCase();return rows.filter(r=>JSON.stringify(r).toLowerCase().includes(lq));}
+function validateForm(fields){
+ for(const f of fields){
+  const el=$("#"+f.id);
+  if(!el){continue;}
+  if(f.required&&!el.value.trim()){
+   el.style.borderColor="var(--bad)";
+   el.focus();
+   alert(f.label+" wajib diisi!");
+   return false;
+  }
+  if(f.type==="number"&&(isNaN(+el.value)||+el.value<0)){
+   el.style.borderColor="var(--bad)";
+   el.focus();
+   alert(f.label+" harus angka positif!");
+   return false;
+  }
+  el.style.borderColor="";
+ }
+ return true;
+}
+function showLoading(btn,text){
+ if(typeof btn==="string")btn=$(btn);
+ if(!btn)return;
+ btn._oldHtml=btn.innerHTML;
+ btn.innerHTML=`<span class="spinner"></span> ${text||"Memproses..."}`;
+ btn.disabled=true;
+}
+function hideLoading(btn){
+ if(typeof btn==="string")btn=$(btn);
+ if(!btn)return;
+ btn.innerHTML=btn._oldHtml||"Simpan";
+ btn.disabled=false;
+}
 function coaSel(v){return `<select id="${v}">${COA.map(c=>`<option value="${c.id}">${c.account_code} — ${c.account_name}</option>`).join("")}</select>`;}
 function st(x){return `<span class="bdg b-${x}">${x}</span>`;}
 let GRIDS={};
@@ -366,7 +399,8 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
    <div class="row"><button class="go ok" onclick="att('in')">✅ Masuk</button><button class="go danger" onclick="att('out')">🚪 Pulang</button></div>
    <div id="ab_out" class="mut">Lokasi GPS diambil otomatis dari browser.</div></div></div>
    <div class="card"><h3><span class="card-icon">📊</span>Omzet 6 Bulan Terakhir</h3><div id="ch" style="padding:16px 0"></div></div>
-   <div class="card"><h3><span class="card-icon">⏰</span>Lewat Jatuh Tempo</h3><div id="due">Memuat…</div></div>`;
+   <div class="card"><h3><span class="card-icon">⏰</span>Lewat Jatuh Tempo</h3><div id="due">Memuat…</div></div>
+   <div class="card"><h3><span class="card-icon">📝</span>Transaksi Terakhir</h3><div id="recent_tx">Memuat...</div></div>`;
   api("/api/employees").then(e=>{$("#ab_emp").innerHTML=e.filter(x=>x.is_active).map(x=>`<option value="${x.id}">${x.full_name}</option>`).join("");}).catch(()=>{$("#ab_out").textContent="Gagal muat karyawan.";});
    api("/api/dashboard/monthly").then(m=>{const mx=Math.max(1,...m.map(x=>x.omzet));
     const colors=["#667eea","#764ba2","#f093fb","#f5576c","#4facfe","#43e97b"];
@@ -381,8 +415,12 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
     html+=`<div style="flex:1;min-width:250px"><h4 style="color:var(--warn);margin-bottom:8px">Utang (${oa.length} telat)</h4>`;
     if(oa.length){html+=`<div style="max-height:150px;overflow-y:auto">${oa.map(x=>`<div style="padding:8px;margin:4px 0;background:#fffff0;border-radius:8px;border-left:3px solid #ed8936"><b>${x.invoice_number}</b> - ${x.contact}<br><span style="color:var(--mut)">${fmt(x.outstanding)} | ${x.days_overdue} hari telat</span></div>`).join("")}</div>`;}
     else{html+='<div class="empty-state" style="padding:16px"><div class="icon">✅</div><p>Utang aman</p></div>';}
-    html+="</div></div>";
-    $("#due").innerHTML=html;}).catch(()=>{$("#due").textContent="—";});
+     html+="</div></div>";
+     $("#due").innerHTML=html;}).catch(()=>{$("#due").textContent="—";});
+    api("/api/sales").then(sales=>{
+     const recent=sales.slice(-5).reverse();
+     $("#recent_tx").innerHTML=recent.length?`<table><thead><tr><th>No</th><th>Tgl</th><th>Customer</th><th>Total</th><th>Status</th></tr></thead><tbody>${recent.map(x=>`<tr class="clickable-row" onclick="goDetail('sales-invoice',${x.id})"><td><b>${x.invoice_number}</b></td><td>${x.transaction_date}</td><td>${esc(x.customer_name)}</td><td>${fmt(x.total_amount)}</td><td>${st(x.status)}</td></tr>`).join("")}</tbody></table>`:'<div class="empty-state" style="padding:16px"><div class="icon">📝</div><p>Belum ada transaksi</p></div>';
+    }).catch(()=>{});
  }
  if(cur==="Penjualan"){
   const sub=window._psub||"invoice";
@@ -753,20 +791,25 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
 window.unitCh=pref=>{const it=ITEMS.find(i=>i.id==$("#"+pref+"_item").value);const us=(it&&it.units)||[{unit_code:"PCS",conversion:1}];
  $("#"+pref+"_unit").innerHTML=us.map(u=>`<option value="${u.unit_code}|${u.conversion}">${u.unit_code} (isi ${u.conversion})</option>`).join("");};
 window.addJ=()=>{_jl.push({account_id:+$("#j_a").value,debit:+$("#j_db").value,credit:+$("#j_cr").value});$("#jlines").innerHTML=_jl.map(x=>`<div>${x.account_id} D${x.debit} K${x.credit}</div>`).join("");};
-window.saveSale=async()=>{try{
+window.saveSale=async()=>{
  const tiv=+($("#ti_val")?$("#ti_val").value:0)||0;
  const lines=gridLines('sg').concat(_sl);
  if(!lines.length)return alert("Isi minimal 1 baris");
+ try{showLoading("#app button.go","Menyimpan...");
  const body={customer_id:+$("#s_cust").value,warehouse_id:+$("#s_wh").value,date:$("#s_date").value,tax_rate:+$("#s_tax").value,lines};
  if($("#s_sp").value)body.salesperson_id=+$("#s_sp").value;
  if(tiv>0)body.trade_in={item_id:+$("#ti_item").value,qty:+$("#ti_qty").value,value:tiv,note:$("#ti_note").value,warehouse_id:+$("#s_wh").value};
  const r=await api("/api/sales",{method:"POST",body:JSON.stringify(body)});
- alert("Tersimpan "+r.invoice+" "+fmt(r.total)+" (piutang "+fmt(r.receivable)+", komisi "+fmt(r.commission)+")");render();}catch(e){alert(e.message)}};
+ alert("Tersimpan "+r.invoice+" "+fmt(r.total)+" (piutang "+fmt(r.receivable)+", komisi "+fmt(r.commission)+")");render();}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
 window.saveSP=async()=>{try{await api("/api/salespersons",{method:"POST",body:JSON.stringify({sp_code:$("#sp_c").value,sp_name:$("#sp_n").value,commission_pct:+$("#sp_p").value,monthly_target:+$("#sp_t").value})});loadM().then(render);}catch(e){alert(e.message)}};
 window.loadTargets=async()=>{try{const t=await api("/api/targets?month="+$("#tg_m").value);
  $("#tg_out").innerHTML=`<table><tr><th>Salesman</th><th>Komisi%</th><th>Target</th><th>Realisasi</th><th>Trx</th><th>%</th><th>Komisi Terutang</th></tr>${t.rows.map(r=>`<tr><td>${r.sp_name}</td><td>${r.commission_pct}%</td><td>${fmt(r.target)}</td><td>${fmt(r.realisasi)}</td><td>${r.transaksi}</td><td>${r.pencapaian}%</td><td>${fmt(r.komisi)}</td></tr>`).join("")}</table>`;}catch(e){alert(e.message)}};
 window.savePR=async()=>{try{const r=await api("/api/payroll",{method:"POST",body:JSON.stringify({date:$("#pr_d").value,employee_name:$("#pr_n").value,gross:+$("#pr_g").value,pph21:+$("#pr_p").value})});alert("Gaji terposting, bersih "+fmt(r.net));render();}catch(e){alert(e.message)}};
-window.saveBuy=async()=>{try{const lines=gridLines('pg').concat(_pl);if(!lines.length)return alert("Isi minimal 1 baris");const r=await api("/api/purchases",{method:"POST",body:JSON.stringify({vendor_id:+$("#p_vend").value,warehouse_id:+$("#p_wh").value,date:$("#p_date").value,tax_rate:+$("#p_tax").value,lines})});alert("Tersimpan "+r.invoice);loadM().then(render);}catch(e){alert(e.message)}};
+window.saveBuy=async()=>{
+ try{const lines=gridLines('pg').concat(_pl);if(!lines.length)return alert("Isi minimal 1 baris");
+ showLoading("#app button.go","Menyimpan...");
+ const r=await api("/api/purchases",{method:"POST",body:JSON.stringify({vendor_id:+$("#p_vend").value,warehouse_id:+$("#p_wh").value,date:$("#p_date").value,tax_rate:+$("#p_tax").value,lines})});
+ alert("Tersimpan "+r.invoice);loadM().then(render);}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
 window.saveT=async()=>{try{await api("/api/transfers",{method:"POST",body:JSON.stringify({from_account:+$("#t_from").value,to_account:+$("#t_to").value,amount:+$("#t_amt").value,date:$("#t_date").value,note:$("#t_note").value})});alert("Transfer tercatat");render();}catch(e){alert(e.message)}};
 window.saveRS=async()=>{try{const r=await api("/api/sales/returns",{method:"POST",body:JSON.stringify({sales_invoice_id:+$("#rs_inv").value,warehouse_id:+$("#rs_wh").value,date:$("#rs_date").value,lines:[{item_id:+$("#rs_item").value,qty:+$("#rs_qty").value}]})});alert("Retur "+r.return+" "+fmt(r.total));loadM().then(render);}catch(e){alert(e.message)}};
 window.saveRP=async()=>{try{const r=await api("/api/purchases/returns",{method:"POST",body:JSON.stringify({purchase_invoice_id:+$("#rp_inv").value,warehouse_id:+$("#rp_wh").value,date:$("#rp_date").value,lines:[{item_id:+$("#rp_item").value,qty:+$("#rp_qty").value}]})});alert("Retur "+r.return+" "+fmt(r.total));loadM().then(render);}catch(e){alert(e.message)}};
@@ -798,20 +841,44 @@ window.saveGiro=async()=>{try{await api("/api/giros",{method:"POST",body:JSON.st
 window.giroClear=async id=>{try{await api("/api/giros/clear",{method:"POST",body:JSON.stringify({id,cash_account_id:+$("#g_cash").value,date:today()})});render();}catch(e){alert(e.message)}};
 window.giroReject=async id=>{if(!confirm("Tolak giro ini? Piutang/utang kembali."))return;try{await api("/api/giros/reject",{method:"POST",body:JSON.stringify({id,date:today()})});render();}catch(e){alert(e.message)}};
 window.closeYear=async()=>{const y=$("#pe_y").value;if(!confirm(`Tutup buku tahun ${y}? Jurnal penutup dibuat & periode dikunci permanen.`))return;try{const r=await api("/api/period-end",{method:"POST",body:JSON.stringify({year:y})});alert("Laba bersih "+fmt(r.net_income)+". Periode dikunci.");render();}catch(e){alert(e.message)}};
-window.saveCU=async()=>{try{await api("/api/customers",{method:"POST",body:JSON.stringify({customer_code:$("#cu_c").value,customer_name:$("#cu_n").value,email:$("#cu_e").value,receivable_account_id:+$("#cu_a").value})});const cu=CUST.find(x=>x.customer_code===$("#cu_c").value);if(cu)await api("/api/customers/limit",{method:"POST",body:JSON.stringify({id:cu.id,credit_limit:+$("#cu_l").value,terms:$("#cu_t").value,term_days:+$("#cu_d").value})});loadM().then(render);}catch(e){alert(e.message)}};
+window.saveCU=async()=>{
+ try{if(!$("#cu_n").value.trim())return alert("Nama pelanggan wajib diisi!");
+ showLoading("#app button.go","Menyimpan...");
+ await api("/api/customers",{method:"POST",body:JSON.stringify({customer_code:$("#cu_c").value,customer_name:$("#cu_n").value,email:$("#cu_e").value,receivable_account_id:+$("#cu_a").value})});
+ const cu=CUST.find(x=>x.customer_code===$("#cu_c").value);
+ if(cu)await api("/api/customers/limit",{method:"POST",body:JSON.stringify({id:cu.id,credit_limit:+$("#cu_l").value,terms:$("#cu_t").value,term_days:+$("#cu_d").value})});
+ loadM().then(render);}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
 window.saveCUL=async()=>{try{await api("/api/customers/limit",{method:"POST",body:JSON.stringify({id:+$("#cu_id").value,credit_limit:+$("#cu_l2").value,terms:$("#cu_t2").value,term_days:+$("#cu_d2").value})});loadM().then(render);}catch(e){alert(e.message)}};
-window.saveVN=async()=>{try{await api("/api/vendors",{method:"POST",body:JSON.stringify({vendor_code:$("#vn_c").value,vendor_name:$("#vn_n").value,email:$("#vn_e").value,payable_account_id:+$("#vn_a").value})});loadM().then(render);}catch(e){alert(e.message)}};
+window.saveVN=async()=>{
+ try{if(!$("#vn_n").value.trim())return alert("Nama vendor wajib diisi!");
+ showLoading("#app button.go","Menyimpan...");
+ await api("/api/vendors",{method:"POST",body:JSON.stringify({vendor_code:$("#vn_c").value,vendor_name:$("#vn_n").value,email:$("#vn_e").value,payable_account_id:+$("#vn_a").value})});
+ loadM().then(render);}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
 window.closeDoc=async(url,id)=>{try{await api(url,{method:"POST",body:JSON.stringify({id})});render();}catch(e){alert(e.message)}};
 window.addQ=()=>{const id=+$("#q_item").value;const[uc,cv]=$("#q_unit").value.split("|");_ql.push({item_id:id,qty:+$("#q_qty").value,price:+$("#q_price").value,description:$("#q_desc").value,unit_code:uc,unit_conv:+cv});$("#qlines").innerHTML=_ql.map(x=>`<div>${x.qty} ${x.unit_code} item#${x.item_id} ${x.description||""}</div>`).join("");};
-window.saveQ=async()=>{try{const r=await api("/api/quotations",{method:"POST",body:JSON.stringify({customer_id:+$("#q_cust").value,date:$("#q_date").value,tax_rate:+$("#q_tax").value,lines:_ql})});alert("Penawaran "+r.quotation);render();}catch(e){alert(e.message)}};
+window.saveQ=async()=>{
+ try{showLoading("#app button.go","Menyimpan...");
+ const r=await api("/api/quotations",{method:"POST",body:JSON.stringify({customer_id:+$("#q_cust").value,date:$("#q_date").value,tax_rate:+$("#q_tax").value,lines:_ql})});
+ alert("Penawaran "+r.quotation);render();}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
 window.copySQ=()=>{const q=_sq.find(x=>x.id==$("#o_sq").value);if(!q)return;await_api_copy(q);};
 async function await_api_copy(q){const full=(await api("/api/quotations")).find(x=>x.id===q.id);full.lines.forEach(l=>gridAdd('oo',{item_id:l.item_id,wh:l.warehouse_id,qty:l.unit_qty||l.quantity,price:l.unit_price,d1:l.discount_pct||0,d2:l.discount_pct2||0,unit:(l.unit_code||"PCS")+"|"+(l.unit_conv||1)}));$("#o_sq").value="";}
-window.saveO=async()=>{try{const b={customer_id:+$("#o_cust").value,date:$("#o_date").value,tax_rate:+$("#o_tax").value,lines:gridLines('oo')};if(!b.lines.length)return alert("Isi minimal 1 baris");if($("#o_sq").value)b.quotation_id=+$("#o_sq").value;const r=await api("/api/sales-orders",{method:"POST",body:JSON.stringify(b)});alert("SO "+r.order);render();}catch(e){alert(e.message)}};
+window.saveO=async()=>{
+ try{const b={customer_id:+$("#o_cust").value,date:$("#o_date").value,tax_rate:+$("#o_tax").value,lines:gridLines('oo')};
+ if(!b.lines.length)return alert("Isi minimal 1 baris");
+ showLoading("#app button.go","Menyimpan...");
+ if($("#o_sq").value)b.quotation_id=+$("#o_sq").value;
+ const r=await api("/api/sales-orders",{method:"POST",body:JSON.stringify(b)});
+ alert("SO "+r.order);render();}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
 window.doLines=()=>{const s=_so.find(x=>x.id==$("#d_so").value);if(!s){$("#dref").innerHTML="";return;}
  $("#dref").innerHTML=`<table><tr><th>Barang</th><th>Deskripsi</th><th>Sisa</th><th>Gudang</th><th>Qty kirim</th><th></th></tr>${s.lines.map(l=>`<tr><td>${l.item_name}</td><td>${l.description||""}</td><td>${l.quantity-l.delivered}</td><td><select id="dw_${l.id}">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></td><td><input id="dq_${l.id}" value="${l.quantity-l.delivered}" style="width:70px"></td><td><button class="go" onclick="addDRef(${l.id})">+</button></td></tr>`).join("")}</table>`;};
 window.addDRef=solId=>{const s=_so.find(x=>x.id==$("#d_so").value);const l=s.lines.find(x=>x.id===solId);_dl.push({sales_order_line_id:solId,item_id:l.item_id,warehouse_id:+$("#dw_"+solId).value,qty:+$("#dq_"+solId).value,description:l.description||""});$("#dlines").innerHTML=_dl.map(x=>`<div>SO#${x.sales_order_line_id} ${x.qty} item#${x.item_id}</div>`).join("");};
 window.addD=()=>{const[uc,cv]=$("#d_unit").value.split("|");_dl.push({item_id:+$("#d_item").value,warehouse_id:+$("#d_wh").value,qty:+$("#d_qty").value,unit_code:uc,unit_conv:+cv,description:$("#d_desc").value});$("#dlines").innerHTML=_dl.map(x=>`<div>${x.qty} item#${x.item_id}</div>`).join("");};
-window.saveD=async()=>{try{const b={customer_id:+$("#d_cust").value,date:$("#d_date").value,lines:_dl};if($("#d_so").value)b.sales_order_id=+$("#d_so").value;const r=await api("/api/deliveries",{method:"POST",body:JSON.stringify(b)});alert("DO "+r.delivery);render();}catch(e){alert(e.message)}};
+window.saveD=async()=>{
+ try{const b={customer_id:+$("#d_cust").value,date:$("#d_date").value,lines:_dl};
+ showLoading("#app button.go","Menyimpan...");
+ if($("#d_so").value)b.sales_order_id=+$("#d_so").value;
+ const r=await api("/api/deliveries",{method:"POST",body:JSON.stringify(b)});
+ alert("DO "+r.delivery);render();}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
 window.voidD=async id=>{if(!confirm("Void surat jalan ini? Stok kembali & jurnal dibalik."))return;try{await api("/api/deliveries/void",{method:"POST",body:JSON.stringify({id,date:today()})});render();}catch(e){alert(e.message)}};
 window.siDO=()=>{const d=_dn.find(x=>x.id==$("#s_do").value);if(!d){$("#sref").innerHTML="";return;}
  api("/api/deliveries").then(all=>{const full=all.find(x=>x.id===d.id);
@@ -823,12 +890,23 @@ window.addSORef=solId=>{const s=_so2.find(x=>x.id==$("#s_so").value);const l=s.l
 window.addR=()=>{_rl.push({item_id:+$("#r_item").value,qty:+$("#r_qty").value,price:+$("#r_price").value,description:$("#r_desc").value});$("#rlines").innerHTML=_rl.map(x=>`<div>${x.qty} item#${x.item_id}</div>`).join("");};
 window.saveR=async()=>{try{const b={date:$("#r_date").value,requester:$("#r_req").value,lines:_rl};if($("#r_vend").value)b.vendor_id=+$("#r_vend").value;await api("/api/requisitions",{method:"POST",body:JSON.stringify(b)});alert("PR tersimpan");render();}catch(e){alert(e.message)}};
 window.copyPR=async()=>{const id=$("#o_pr").value;if(!id)return;const full=(await api("/api/requisitions")).find(x=>x.id==+id);full.lines.forEach(l=>gridAdd('og',{item_id:l.item_id,wh:WH[0].id,qty:l.unit_qty||l.quantity,price:l.est_price}));$("#o_pr").value="";};
-window.saveO2=async()=>{try{const lines=gridLines('og');if(!lines.length)return alert("Isi minimal 1 baris");const b={vendor_id:+$("#o_vend").value,date:$("#o_date").value,tax_rate:+$("#o_tax").value,lines};if($("#o_pr").value)b.requisition_id=+$("#o_pr").value;const r=await api("/api/purchase-orders",{method:"POST",body:JSON.stringify(b)});alert("PO "+r.order);render();}catch(e){alert(e.message)}};
+window.saveO2=async()=>{
+ try{const lines=gridLines('og');if(!lines.length)return alert("Isi minimal 1 baris");
+ showLoading("#app button.go","Menyimpan...");
+ const b={vendor_id:+$("#o_vend").value,date:$("#o_date").value,tax_rate:+$("#o_tax").value,lines};
+ if($("#o_pr").value)b.requisition_id=+$("#o_pr").value;
+ const r=await api("/api/purchase-orders",{method:"POST",body:JSON.stringify(b)});
+ alert("PO "+r.order);render();}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
 window.riLines=()=>{const p=_po.find(x=>x.id==$("#v_po").value);if(!p){$("#vref").innerHTML="";return;}
  $("#vref").innerHTML=`<table><tr><th>Barang</th><th>Sisa</th><th>Qty terima</th><th></th></tr>${p.lines.map(l=>`<tr><td>${l.item_name}</td><td>${l.quantity-l.received}</td><td><input id="vq_${l.id}" value="${l.quantity-l.received}" style="width:70px"></td><td><button class="go" onclick="addVRef(${l.id})">+</button></td></tr>`).join("")}</table>`;};
 window.addVRef=polId=>{const p=_po.find(x=>x.id==$("#v_po").value);const l=p.lines.find(x=>x.id===polId);_vl.push({purchase_order_line_id:polId,item_id:l.item_id,warehouse_id:l.warehouse_id,qty:+$("#vq_"+polId).value,price:Math.round(l.unit_price/(l.unit_conv||1))});$("#vlines").innerHTML=_vl.map(x=>`<div>PO#${x.purchase_order_line_id||""} ${x.qty} item#${x.item_id}</div>`).join("");};
 window.addV=()=>{const[uc,cv]=$("#v_unit").value.split("|");_vl.push({item_id:+$("#v_item").value,warehouse_id:+$("#v_wh").value,qty:+$("#v_qty").value,price:+$("#v_price").value,unit_code:uc,unit_conv:+cv,description:$("#v_desc").value});$("#vlines").innerHTML=_vl.map(x=>`<div>${x.qty} item#${x.item_id}</div>`).join("");};
-window.saveV=async()=>{try{const b={vendor_id:+$("#v_vend").value,date:$("#v_date").value,lines:_vl};if($("#v_po").value)b.purchase_order_id=+$("#v_po").value;const r=await api("/api/receives",{method:"POST",body:JSON.stringify(b)});alert("Receive "+r.receive);render();}catch(e){alert(e.message)}};
+window.saveV=async()=>{
+ try{const b={vendor_id:+$("#v_vend").value,date:$("#v_date").value,lines:_vl};
+ showLoading("#app button.go","Menyimpan...");
+ if($("#v_po").value)b.purchase_order_id=+$("#v_po").value;
+ const r=await api("/api/receives",{method:"POST",body:JSON.stringify(b)});
+ alert("Receive "+r.receive);render();}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
 window.voidR=async id=>{if(!confirm("Void penerimaan ini? Stok dikurangi & jurnal dibalik."))return;try{await api("/api/receives/void",{method:"POST",body:JSON.stringify({id,date:today()})});render();}catch(e){alert(e.message)}};
 window.piRI=()=>{const r=_ri.find(x=>x.id==$("#p_ri").value);if(!r){if(!$("#p_po").value)$("#pref").innerHTML="";return;}
  api("/api/receives").then(all=>{const full=all.find(x=>x.id===r.id);
@@ -884,10 +962,11 @@ window.csvStock=async()=>{const s=await api("/api/stock");csv("stok.csv",[["Kode
 window.saveU=async()=>{try{await api("/api/units",{method:"POST",body:JSON.stringify({item_id:+$("#u_item").value,unit_code:$("#u_code").value,conversion:+$("#u_conv").value})});loadM().then(render);}catch(e){alert(e.message)}};
 window.setMethod=async(id,m)=>{if(!confirm("Ubah metode HPP ke "+m+"? Layer FIFO dibangun ulang dari stok saat ini."))return;try{await api("/api/items/method",{method:"POST",body:JSON.stringify({id,method:m})});loadM().then(render);}catch(e){alert(e.message)}};
 window.saveNU=async()=>{try{await api("/api/users",{method:"POST",body:JSON.stringify({username:$("#nu_u").value,password:$("#nu_p").value,full_name:$("#nu_n").value,role:$("#nu_r").value})});render();}catch(e){alert(e.message)}};
-window.savePay=async()=>{try{
- const tot=_al.reduce((a,x)=>a+x.amount,0);
+window.savePay=async()=>{
+ try{const tot=_al.reduce((a,x)=>a+x.amount,0);
+ showLoading("#app button.go","Menyimpan...");
  await api("/api/payments",{method:"POST",body:JSON.stringify({kind:$("#k_kind").value,cash_account_id:+$("#k_cash").value,contact_id:+$("#k_c").value,amount:tot,date:$("#k_date").value,note:$("#k_note").value,allocations:_al})});
- alert("Pembayaran "+fmt(tot)+" tercatat");render();}catch(e){alert(e.message)}};
+ alert("Pembayaran "+fmt(tot)+" tercatat");render();}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
 window.kindCh=()=>{const k=$("#k_kind").value;const cs=k==="AR"?CUST:VEND;const nm=k==="AR"?"customer_name":"vendor_name";
  $("#k_c").innerHTML=cs.map(c=>`<option value="${c.id}">${c[nm]}</option>`).join("");
  const ag=k==="AR"?_ag:_agAP;
@@ -905,7 +984,10 @@ window.voidSale=async id=>{if(!confirm("Void invoice ini? Jurnal dibalik & stok 
 window.voidBuy=async id=>{if(!confirm("Void tagihan ini? Jurnal dibalik & stok dikurangi."))return;try{const r=await api("/api/purchases/void",{method:"POST",body:JSON.stringify({id,date:today()})});alert(r.need_approval?"Diajukan, menunggu MANAGER":"Tagihan di-void");render();}catch(e){alert(e.message)}};
 window.opname=async()=>{try{const r=await api("/api/stock/opname",{method:"POST",body:JSON.stringify({item_id:+$("#o_item").value,warehouse_id:+$("#o_wh").value,actual_qty:+$("#o_qty").value,date:$("#o_date").value})});alert("Selisih "+r.diff+" ("+fmt(r.value)+")");loadM().then(render);}catch(e){alert(e.message)}};
 window.transfer=async()=>{try{await api("/api/stock/transfer",{method:"POST",body:JSON.stringify({item_id:+$("#t_item").value,from_warehouse:+$("#t_from").value,to_warehouse:+$("#t_to").value,qty:+$("#t_qty").value,date:$("#t_date").value})});alert("Stok dipindahkan");loadM().then(render);}catch(e){alert(e.message)}};
-window.saveJ=async()=>{try{await api("/api/journals",{method:"POST",body:JSON.stringify({transaction_date:$("#j_d").value,description:$("#j_desc").value,lines:_jl})});alert("Jurnal posted");render();}catch(e){alert(e.message)}};
+window.saveJ=async()=>{
+ try{showLoading("#app button.go","Posting...");
+ await api("/api/journals",{method:"POST",body:JSON.stringify({transaction_date:$("#j_d").value,description:$("#j_desc").value,lines:_jl})});
+ alert("Jurnal posted");render();}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
 window.card=async()=>{const r=await api("/api/stock-card?item_id="+$("#sc").value);$("#card").innerHTML=`<table><tr><th>Tgl</th><th>Ref</th><th>In</th><th>Out</th><th>HPP</th></tr>${r.map(x=>`<tr><td>${x.transaction_date}</td><td>${x.reference_type}</td><td>${x.qty_in}</td><td>${x.qty_out}</td><td>${fmt(x.cogs_unit_price)}</td></tr>`).join("")}</table>`;};
 window.saveA=async()=>{await api("/api/assets",{method:"POST",body:JSON.stringify({asset_code:$("#a_c").value,asset_name:$("#a_n").value,purchase_date:$("#a_d").value,cost:Math.round(+$("#a_cost").value),useful_months:+$("#a_u").value})});render();};
 window.susut=async id=>{const r=await api("/api/assets/depreciate",{method:"POST",body:JSON.stringify({id,date:today()})});alert("Disusutkan "+fmt(r.amount));render();};
@@ -925,3 +1007,16 @@ window.payroll=async()=>{const g=COA.find(c=>c.account_code==="61001").id,u=COA.
  await api("/api/journals",{method:"POST",body:JSON.stringify({transaction_date:today(),description:"Gaji bulan ini (HRIS)",lines:[{account_id:g,debit:v,credit:0},{account_id:u,debit:0,credit:v}]})});
  $("#hr_out").textContent="Jurnal gaji "+fmt(v)+" terposting (Dr Beban Gaji / Cr Utang Gaji).";};
 boot();
+
+// Mobile sidebar toggle
+if(window.innerWidth<=900){
+ const aside=$("aside");
+ if(aside&&!aside._mobInit){
+  aside._mobInit=true;
+  const toggle=document.createElement("button");
+  toggle.className="mobile-toggle";
+  toggle.innerHTML="☰";
+  toggle.onclick=()=>aside.classList.toggle("open");
+  document.querySelector("main").prepend(toggle);
+ }
+}

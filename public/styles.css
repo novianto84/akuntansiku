@@ -1155,3 +1155,158 @@ tbody tr.clickable-row:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow);
 }
+
+/* ---- Form Validation States ---- */
+input:invalid, select:invalid {
+  border-color: var(--bad);
+}
+
+input:valid, select:valid {
+  border-color: var(--ok);
+}
+
+button.go:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* ---- Loading Overlay ---- */
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.loading-overlay .spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--line);
+  border-top-color: var(--acc);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* ---- Mobile Toggle Button ---- */
+.mobile-toggle {
+  display: none;
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 1001;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--acc);
+  color: #fff;
+  border: 0;
+  font-size: 20px;
+  cursor: pointer;
+  box-shadow: var(--shadow-lg);
+  transition: var(--transition);
+}
+
+.mobile-toggle:hover {
+  transform: scale(1.1);
+}
+
+@media (max-width: 900px) {
+  .mobile-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  aside {
+    position: fixed;
+    left: -280px;
+    top: 0;
+    height: 100vh;
+    z-index: 1000;
+    transition: left 0.3s ease;
+    width: 260px;
+  }
+  
+  aside.open {
+    left: 0;
+    box-shadow: 20px 0 40px rgba(0, 0, 0, 0.3);
+  }
+  
+  main {
+    padding-left: 60px;
+  }
+  
+  .page-header h1 {
+    margin-top: 40px;
+  }
+}
+
+/* ---- Improved Table Scroll ---- */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -24px;
+  padding: 0 24px;
+}
+
+/* ---- Card Responsive ---- */
+@media (max-width: 600px) {
+  .card {
+    padding: 16px;
+    margin: 12px 0;
+    border-radius: 12px;
+  }
+  
+  .card h3 {
+    font-size: 14px;
+    padding-bottom: 8px;
+  }
+  
+  .grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .row > * {
+    width: 100%;
+  }
+  
+  button.go {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  .kpi {
+    padding: 12px;
+  }
+  
+  .kpi b {
+    font-size: 18px;
+  }
+  
+  table {
+    font-size: 12px;
+    min-width: 400px;
+  }
+  
+  thead th, tbody td {
+    padding: 8px 6px;
+  }
+}
