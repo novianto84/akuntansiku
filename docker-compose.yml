@@ -1,13 +1,13 @@
 services:
-  akuntansiku:
+  erp-msp:
     build: .
-    container_name: akuntansiku
+    container_name: erp-msp
     restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
       PORT: "8000"
-      AKUNTANSIKU_DB: /app/data/database.db
+      ERP_MSP_DB: /app/data/database.db
     volumes:
       - ./data:/app/data
       - ./backup:/app/backup

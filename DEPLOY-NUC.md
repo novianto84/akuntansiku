@@ -3,10 +3,10 @@ Prioritas yang dipilih: Docker dulu (persisten + backup), baru akses aman. Janga
 
 ## 1. Siapkan folder di NUC
 ```
-mkdir -p /opt/akuntansiku/data /opt/akuntansiku/backup
-cp app.py Dockerfile docker-compose.yml backup.sh /opt/akuntansiku/
-cp -r public /opt/akuntansiku/
-cd /opt/akuntansiku
+mkdir -p /opt/erp-msp/data /opt/erp-msp/backup
+cp app.py Dockerfile docker-compose.yml backup.sh /opt/erp-msp/
+cp -r public /opt/erp-msp/
+cd /opt/erp-msp
 ```
 
 ## 2. Jalankan (seed otomatis bila DB kosong)
@@ -33,7 +33,7 @@ Alternatif bila perlu link publik: Cloudflare Tunnel (HTTPS + Access policy).
 
 ## 5. Update aman
 ```
-cd /opt/akuntansiku && docker compose up -d --build
+cd /opt/erp-msp && docker compose up -d --build
 sh backup.sh   # sebelum & sesudah update
 ```
 Rollback: `cp backup/database-<STAMP>.db data/database.db && docker compose restart`.

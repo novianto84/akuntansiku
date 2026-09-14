@@ -1,4 +1,4 @@
-# PANDUAN OPERASIONAL — AkuntansiKu (ala Accurate Online)
+# PANDUAN OPERASIONAL — ERP-MSP (ala Accurate Online)
 
 ## 1. Menjalankan aplikasi
 - Buka folder ini, jalankan: `python app.py`

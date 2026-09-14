@@ -41,8 +41,8 @@ function loginScreen(){
  document.body.style.background="linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
  main.innerHTML=`<div class="login-wrap"><div class="login-card">
  <span class="logo-icon">📊</span>
- <h3>AkuntansiKu</h3>
- <p class="tagline">Sistem Akuntansi Modern & Terintegrasi</p>
+ <h3>ERP-MSP</h3>
+ <p class="tagline">Enterprise Resource Planning - Micro Small Business</p>
  <input id="l_u" placeholder="Username" value="admin">
  <input id="l_p" type="password" placeholder="Password" value="admin123">
  <button class="go" onclick="doLogin()">Masuk</button>
