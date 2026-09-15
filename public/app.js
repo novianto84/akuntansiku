@@ -222,6 +222,7 @@ window.updateCurrRate=async(code,rate)=>{
  const c=currencies.find(x=>x.code===code);
  if(c){c.rate=rate;alert(code+" kurs diperbarui: "+rate);}
 };
+let _al=[];
 let GRIDS={};
 function gridHTML(gid){return `<table class="grid-table"><thead><tr><th>No</th><th>Barang</th><th>Deskripsi</th>${GRIDS[gid].cfg.wh?"<th>Gudang</th>":""}<th>Satuan</th><th>Qty</th><th>Harga</th>${GRIDS[gid].cfg.disc?"<th>D1%</th><th>D2%</th>":""}<th>Total</th><th></th></tr></thead><tbody id="${gid}_body"></tbody></table><button class="go" onclick="gridAdd('${gid}')">+ Tambah baris</button><div class="grid-sub">Subtotal:&nbsp;<b id="${gid}_sub">Rp 0</b></div>`;}
 function gridStart(gid,cfg){GRIDS[gid]={rows:[],cfg};const w=document.createElement("div");w.innerHTML=gridHTML(gid);const host=$("#"+gid+"_wrap");host.innerHTML="";host.appendChild(w);gridAdd(gid);}
@@ -514,9 +515,8 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
    <div id="ab_out" class="mut">Lokasi GPS diambil otomatis dari browser.</div></div></div>
    <div class="card"><h3><span class="card-icon">📊</span>Omzet 6 Bulan Terakhir</h3><div id="ch" style="padding:16px 0"></div></div>
    <div class="card"><h3><span class="card-icon">⏰</span>Lewat Jatuh Tempo</h3><div id="due">Memuat…</div></div>
-    <div class="card"><h3><span class="card-icon">📝</span>Transaksi Terakhir</h3><div id="recent_tx">Memuat...</div></div>
-    <div class="card"><h3><span class="card-icon">📊</span>Omzet 6 Bulan Terakhir</h3><canvas id="chartOmzet" width="400" height="200"></canvas></div>
-    <div class="card"><h3><span class="card-icon">💰</span>Piutang & Hutang</h3><canvas id="chartPH" width="400" height="200"></canvas></div>`;
+     <div class="card"><h3><span class="card-icon">📝</span>Transaksi Terakhir</h3><div id="recent_tx">Memuat...</div></div>
+     <div class="card"><h3><span class="card-icon">💰</span>Piutang & Hutang</h3><canvas id="chartPH" width="400" height="200"></canvas></div>`;
   api("/api/employees").then(e=>{$("#ab_emp").innerHTML=e.filter(x=>x.is_active).map(x=>`<option value="${x.id}">${x.full_name}</option>`).join("");}).catch(()=>{$("#ab_out").textContent="Gagal muat karyawan.";});
    api("/api/dashboard/monthly").then(m=>{const mx=Math.max(1,...m.map(x=>x.omzet));
     const colors=["#667eea","#764ba2","#f093fb","#f5576c","#4facfe","#43e97b"];
@@ -537,64 +537,6 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
       const recent=sales.slice(-5).reverse();
       $("#recent_tx").innerHTML=recent.length?`<table><thead><tr><th>No</th><th>Tgl</th><th>Customer</th><th>Total</th><th>Status</th></tr></thead><tbody>${recent.map(x=>`<tr class="clickable-row" onclick="goDetail('sales-invoice',${x.id})"><td><b>${x.invoice_number}</b></td><td>${x.transaction_date}</td><td>${esc(x.customer_name)}</td><td>${fmt(x.total_amount)}</td><td>${st(x.status)}</td></tr>`).join("")}</tbody></table>`:'<div class="empty-state" style="padding:16px"><div class="icon">📝</div><p>Belum ada transaksi</p></div>';
      }).catch(()=>{});
-
-     // Draw omzet chart
-     setTimeout(async()=>{
-      try{
-       const sales=await api("/api/sales");
-       const now=new Date();
-       const months=[];
-       const amounts=[];
-       for(let i=5;i>=0;i--){
-        const d=new Date(now.getFullYear(),now.getMonth()-i,1);
-        const label=d.toLocaleDateString("id-ID",{month:"short"});
-        const m=d.getMonth();
-        const y=d.getFullYear();
-        const total=sales.filter(x=>{
-         const xd=new Date(x.transaction_date);
-         return xd.getMonth()===m&&xd.getFullYear()===y;
-        }).reduce((a,x)=>a+x.total_amount,0);
-        months.push(label);
-        amounts.push(total);
-       }
-       const canvas=document.getElementById("chartOmzet");
-       if(canvas){
-        const ctx=canvas.getContext("2d");
-        const max=Math.max(...amounts,1);
-        const barW=50;
-        const gap=15;
-        const startX=50;
-        ctx.clearRect(0,0,canvas.width,canvas.height);
-        ctx.font="11px Inter";
-        // Y axis
-        for(let i=0;i<=4;i++){
-         const y=180-i*40;
-         ctx.fillStyle="#94a3b8";
-         ctx.fillText(fmt(max*i/4).replace(",00",""),0,y+4);
-         ctx.strokeStyle="#e2e8f0";
-         ctx.beginPath();ctx.moveTo(45,y);ctx.lineTo(400,y);ctx.stroke();
-        }
-        // Bars
-        months.forEach((m,i)=>{
-         const x=startX+i*(barW+gap);
-         const h=(amounts[i]/max)*160;
-         const grad=ctx.createLinearGradient(x,180-h,x,180);
-         grad.addColorStop(0,"#6366f1");
-         grad.addColorStop(1,"#818cf8");
-         ctx.fillStyle=grad;
-         ctx.beginPath();
-         ctx.roundRect(x,180-h,barW,h,4);
-         ctx.fill();
-         ctx.fillStyle="#1e293b";
-         ctx.textAlign="center";
-         ctx.fillText(m,x+barW/2,195);
-         if(amounts[i]>0){
-          ctx.fillText(fmt(amounts[i]).replace(",00",""),x+barW/2,175-h);
-         }
-        });
-       }
-      }catch(e){console.log("Chart error:",e);}
-     },200);
 
      // Draw piutang/hutang chart
      setTimeout(async()=>{
@@ -1177,9 +1119,9 @@ if(cur==="Laporan"){
    <div class="row" style="margin-top:12px"><button class="go" onclick="saveVL()">Simpan Limit</button></div></div>`;
   }
   else if(curSub==="Persediaan"){
-   A.innerHTML=`<div class="card"><h3>Barang, Satuan & Metode HPP</h3>${searchBar("Cari barang...","render()")}<table><tr><th>Kode</th><th>Nama</th><th>Stok (dasar)</th><th>Satuan</th><th>Metode</th><th>Nilai Stok</th><th></th></tr>${filterRows(ITEMS,searchQ).map(i=>`<tr class="clickable-row" onclick="goDetail('item',${i.id})"><td>${i.item_code}</td><td>${i.item_name}</td><td>${i.stock} ${i.base_unit}</td><td>${(i.units||[]).map(u=>u.unit_code+"×"+u.conversion).join(", ")}</td><td>${methOf(i.item_code)}</td><td>${fmt(valOf(i.item_code))}</td><td>${i.item_type==="INVENTORY"?`<button class="go" onclick="event.stopPropagation();setMethod(${i.id},'${methOf(i.item_code)==="FIFO"?"AVERAGE":"FIFO"}')">jadi ${methOf(i.item_code)==="FIFO"?"AVERAGE":"FIFO"}</button>`:""}</td></tr>`).join("")}</table>
+   A.innerHTML=`<div class="card"><h3>Satuan Barang</h3>
    <div class="grid grid-3">
-   <div class="field required"><label>Barang</label><select id="u_item">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select></div>
+   <div class="field required"><label>Barang</label><select id="u_item">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code} - ${i.item_name}</option>`).join("")}</select></div>
    <div class="field"><label>Satuan</label><input id="u_code" value="BOX" style="width:70px"></div>
    <div class="field"><label>Isi (konversi)</label><input id="u_conv" value="10" style="width:80px"></div>
    </div>
