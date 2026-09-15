@@ -1,5 +1,5 @@
 const $=s=>document.querySelector(s);
-const ALL_MENUS=["Dashboard","Penjualan","Pembelian","Kas & Bank","Buku Besar","Persediaan","Aset Tetap","Laporan","Master","HRD","AI & Integrasi"];
+const ALL_MENUS=["Dashboard","Penjualan","Pembelian","Kas & Bank","Buku Besar","Persediaan","Aset Tetap","Budgeting","Laporan","Master","HRD","AI & Integrasi"];
 let MENUS=ALL_MENUS;
 let COA=[],WH=[],ITEMS=[],CUST=[],VEND=[],SP=[],BR=[],TAX=[],cur="Dashboard",ME=null;
 let curSub="",curDetail=null,curDetailId=null,searchQ="";
@@ -10,7 +10,7 @@ const fmt=n=>"Rp "+Number(Math.round(n||0)).toLocaleString("id-ID");
 const esc=s=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 const today=()=>new Date().toISOString().slice(0,10);
 const tok=()=>localStorage.getItem("tok")||"";
-const MENU_ICONS={"Dashboard":"📈","Penjualan":"🛒","Pembelian":"📦","Kas & Bank":"💰","Buku Besar":"📒","Persediaan":"🏪","Aset Tetap":"🏢","Laporan":"📊","Master":"⚙️","HRD":"👥","AI & Integrasi":"🤖"};
+const MENU_ICONS={"Dashboard":"📈","Penjualan":"🛒","Pembelian":"📦","Kas & Bank":"💰","Buku Besar":"📒","Persediaan":"🏪","Aset Tetap":"🏢","Budgeting":"💰","Laporan":"📊","Master":"⚙️","HRD":"👥","AI & Integrasi":"🤖"};
 async function api(p,o){const r=await fetch(p,{headers:{"Content-Type":"application/json","Authorization":"Bearer "+tok()},...o});
  if(r.status===401){logout();throw new Error("Sesi habis, silakan login lagi");}
  const j=await r.json();if(!r.ok)throw new Error(j.error||"Error");return j;}
@@ -31,6 +31,61 @@ async function boot(){
   };
  }
  if(!tok())return loginScreen();
+ // Dark mode toggle
+ const savedTheme=localStorage.getItem("erp-theme")||"light";
+ document.documentElement.setAttribute("data-theme",savedTheme);
+
+ const themeBtn=document.createElement("button");
+ themeBtn.className="theme-toggle";
+ themeBtn.innerHTML=savedTheme==="dark"?"☀️":"🌙";
+ themeBtn.onclick=()=>{
+  const current=document.documentElement.getAttribute("data-theme");
+  const next=current==="dark"?"light":"dark";
+  document.documentElement.setAttribute("data-theme",next);
+  localStorage.setItem("erp-theme",next);
+  themeBtn.innerHTML=next==="dark"?"☀️":"🌙";
+  showToast(next==="dark"?"Mode Gelap":"Mode Terang","Tema telah diubah","success");
+ };
+ document.body.appendChild(themeBtn);
+
+ // Keyboard shortcuts
+ const shortcuts={
+  "d":()=>window.location.hash="#dashboard",
+  "p":()=>{cur="Penjualan";render();},
+  "b":()=>{cur="Pembelian";render();},
+  "k":()=>{cur="Kas & Bank";render();},
+  "l":()=>{cur="Laporan";render();},
+  "m":()=>{cur="Master";render();},
+  "Escape":()=>{curDetail=null;render();},
+  "?":()=>toggleShortcuts()
+ };
+
+ function toggleShortcuts(){
+  const hint=document.querySelector(".shortcut-hint");
+  if(hint){hint.classList.toggle("show");}
+  else{
+   const div=document.createElement("div");
+   div.className="shortcut-hint show";
+   div.innerHTML=`<h4>⌨️ Keyboard Shortcuts</h4>
+   <table>
+    <tr><td><span class="kbd">D</span></td><td>Dashboard</td></tr>
+    <tr><td><span class="kbd">P</span></td><td>Penjualan</td></tr>
+    <tr><td><span class="kbd">B</span></td><td>Pembelian</td></tr>
+    <tr><td><span class="kbd">K</span></td><td>Kas & Bank</td></tr>
+    <tr><td><span class="kbd">L</span></td><td>Laporan</td></tr>
+    <tr><td><span class="kbd">M</span></td><td>Master</td></tr>
+    <tr><td><span class="kbd">ESC</span></td><td>Kembali</td></tr>
+    <tr><td><span class="kbd">?</span></td><td>Tampilkan/Sembunyikan</td></tr>
+   </table>`;
+   document.body.appendChild(div);
+  }
+ }
+
+ document.addEventListener("keydown",(e)=>{
+  if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA"||e.target.tagName==="SELECT")return;
+  if(shortcuts[e.key]){shortcuts[e.key]();}
+ });
+
  try{ME=await api("/api/me");}
  catch(e){return loginScreen();}
  const R=ME.role;
@@ -124,6 +179,14 @@ function hideLoading(btn){
  if(!btn)return;
  btn.innerHTML=btn._oldHtml||"Simpan";
  btn.disabled=false;
+}
+// Toast notification
+function showToast(title,message,type="info"){
+ const toast=document.createElement("div");
+ toast.className=`toast ${type}`;
+ toast.innerHTML=`<div class="title">${esc(title)}</div><div class="message">${esc(message)}</div>`;
+ document.body.appendChild(toast);
+ setTimeout(()=>toast.remove(),4000);
 }
 function coaSel(v){return `<select id="${v}">${COA.map(c=>`<option value="${c.id}">${c.account_code} — ${c.account_name}</option>`).join("")}</select>`;}
 function st(x){return `<span class="bdg b-${x}">${x}</span>`;}
@@ -909,7 +972,27 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
   <div class="card"><table><tr><th>Kode</th><th>Nama</th><th>Harga</th><th>Akum.</th><th>Aksi</th></tr>
   ${a.map(x=>`<tr><td>${x.asset_code}</td><td>${x.asset_name}</td><td>${fmt(x.cost)}</td><td>${fmt(x.accum_depr)}</td><td><button class="go" onclick="susut(${x.id})">Susutkan bulan ini</button></td></tr>`).join("")}</table></div>`;
  }
- if(cur==="Laporan"){
+ if(cur==="Budgeting"){
+ const now=new Date();
+ const curYear=now.getFullYear();
+ const yearOpts=[curYear-1,curYear,curYear+1].map(y=>`<option value="${y}" ${y===curYear?"selected":""}>${y}</option>`).join("");
+ 
+ A.innerHTML=`<div class="page-header"><h1>💰 Anggaran (Budgeting)</h1></div>
+ <div class="row" style="margin-bottom:24px">
+  <div class="field"><label>Tahun</label><select id="bud_year" onchange="loadBudget()">${yearOpts}</select></div>
+  <div class="field"><label>Bulan</label><select id="bud_month">
+   <option value="0">Semua Bulan</option>
+   ${["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"].map((m,i)=>`<option value="${i+1}">${m}</option>`).join("")}
+  </select></div>
+  <button class="go" onclick="loadBudget()">🔍 Tampilkan</button>
+  <button class="go" onclick="exportBudget()">📥 Export</button>
+ </div>
+ <div class="card" id="budgetOutput">
+  <div class="empty-state"><div class="icon">💰</div><p>Pilih tahun untuk menampilkan anggaran</p></div>
+ </div>`;
+ setTimeout(loadBudget,100);
+}
+if(cur==="Laporan"){
   const now=new Date();
   const curMonth=now.getMonth()+1;
   const curYear=now.getFullYear();
@@ -1452,6 +1535,89 @@ async function loadReport(type){
     </tbody></table></div>`).join("")}`;
   }
  }catch(e){out.innerHTML=`<div class="card">❌ Error: ${e.message}</div>`;}
+}
+async function loadBudget(){
+ const y=+$("#bud_year").value;
+ const m=+$("#bud_month").value;
+ const out=$("#budgetOutput");
+ if(!out)return;
+ 
+ try{
+  const accounts=[
+   {code:"4001",name:"Penjualan Produk",type:"income",budget:50000000},
+   {code:"4002",name:"Penjualan Jasa",type:"income",budget:20000000},
+   {code:"5001",name:"HPP",type:"expense",budget:30000000},
+   {code:"5002",name:"Gaji Karyawan",type:"expense",budget:15000000},
+   {code:"5003",name:"Sewa Tempat",type:"expense",budget:5000000},
+   {code:"5004",name:"Listrik & Air",type:"expense",budget:3000000},
+   {code:"5005",name:"Marketing",type:"expense",budget:7000000},
+   {code:"5006",name:"Perlengkapan",type:"expense",budget:2000000}
+  ];
+  
+  const sales=await api("/api/sales");
+  const purchases=await api("/api/purchases");
+  
+  const filtered=sales.filter(x=>{
+   const d=new Date(x.transaction_date);
+   return d.getFullYear()===y&&(m===0||d.getMonth()+1===m);
+  });
+  
+  const totalSales=filtered.reduce((a,x)=>a+x.total_amount,0);
+  const totalPurchases=purchases.filter(x=>{
+   const d=new Date(x.transaction_date);
+   return d.getFullYear()===y&&(m===0||d.getMonth()+1===m);
+  }).reduce((a,x)=>a+x.total_amount,0);
+  
+  out.innerHTML=`<h3>💰 Anggaran ${y} ${m>0?"- "+["","Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"][m]:""}</h3>
+   <div class="kpi-row">
+    <div class="kpi success"><label>Target Penjualan</label><b>${fmt(accounts.filter(a=>a.type==="income").reduce((a,x)=>a+x.budget,0))}</b></div>
+    <div class="kpi" style="background:${totalSales>=accounts.filter(a=>a.type==="income").reduce((a,x)=>a+x.budget,0)?'var(--ok)':'var(--bad)'}"><label>Realisasi Penjualan</label><b>${fmt(totalSales)}</b></div>
+    <div class="kpi warning"><label>Target Beban</label><b>${fmt(accounts.filter(a=>a.type==="expense").reduce((a,x)=>a+x.budget,0))}</b></div>
+    <div class="kpi" style="background:${totalPurchases<=accounts.filter(a=>a.type==="expense").reduce((a,x)=>a+x.budget,0)?'var(--ok)':'var(--bad)'}"><label>Realisasi Beban</label><b>${fmt(totalPurchases)}</b></div>
+   </div>
+   <table style="margin-top:24px">
+    <thead><tr><th>Akun</th><th>Jenis</th><th>Anggaran</th><th>Realisasi</th><th>Selisih</th><th>% Capai</th><th>Status</th></tr></thead>
+    <tbody>
+     ${accounts.map(a=>{
+      const actual=a.type==="income"?(a.code.startsWith("4")?totalSales:0):(a.code.startsWith("5")?totalPurchases:0);
+      const diff=a.budget-actual;
+      const pct=a.budget>0?((actual/a.budget)*100).toFixed(1):0;
+      const status=Math.abs(diff)<a.budget*0.1?"✅":"⚠️";
+      return `<tr>
+       <td><b>${a.code}</b> ${a.name}</td>
+       <td>${a.type==="income"?"Pendapatan":"Beban"}</td>
+       <td>${fmt(a.budget)}</td>
+       <td>${fmt(actual)}</td>
+       <td style="color:${diff>=0?'var(--ok)':'var(--bad)'}">${fmt(diff)}</td>
+       <td>${pct}%</td>
+       <td>${status}</td>
+      </tr>`;
+     }).join("")}
+    </tbody>
+    <tfoot>
+     <tr style="font-weight:bold;background:var(--card)">
+      <td colspan="2">TOTAL</td>
+      <td>${fmt(accounts.reduce((a,x)=>a+x.budget,0))}</td>
+      <td>${fmt(totalSales+totalPurchases)}</td>
+      <td style="color:${accounts.reduce((a,x)=>a+x.budget,0)-(totalSales+totalPurchases)>=0?'var(--ok)':'var(--bad)'}">${fmt(accounts.reduce((a,x)=>a+x.budget,0)-(totalSales+totalPurchases))}</td>
+      <td>${((totalSales+totalPurchases)/accounts.reduce((a,x)=>a+x.budget,0)*100).toFixed(1)}%</td>
+      <td></td>
+     </tr>
+    </tfoot>
+   </table>`;
+ }catch(e){out.innerHTML=`<div class="card">❌ Error: ${e.message}</div>`;}
+}
+function exportBudget(){
+ const y=$("#bud_year").value;
+ const m=$("#bud_month").value;
+ const content=document.getElementById("budgetOutput")?.innerText||"";
+ const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Anggaran ${y} - ERP-MSP</title>
+ <style>body{font-family:Arial,sans-serif;padding:20px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #ddd;text-align:left}th{background:#f5f5f5}</style>
+ </head><body><h1>Anggaran ${y}</h1><pre style="white-space:pre-wrap">${content}</pre></body></html>`;
+ const win=window.open('','_blank');
+ win.document.write(html);
+ win.document.close();
+ setTimeout(()=>win.print(),300);
 }
 window.csvTB=async()=>{const tb=await api("/api/reports/trial-balance");csv("trial-balance.csv",[["Kode","Akun","Tipe","Debit","Kredit"],...tb.map(r=>[r.account_code,r.account_name,r.account_type,r.d,r.k])]);};
 window.csvStock=async()=>{const s=await api("/api/stock");csv("stok.csv",[["Kode","Barang","Gudang","Stok","AvgCost","Nilai"],...s.map(x=>[x.item_code,x.item_name,x.warehouse,x.stock,x.avg_cost,x.value])]);};

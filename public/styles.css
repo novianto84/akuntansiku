@@ -1310,3 +1310,225 @@ button.go:disabled {
     padding: 8px 6px;
   }
 }
+
+/* ========================================
+   DARK MODE
+   ======================================== */
+:root {
+  --bg: #f8fafc;
+  --card: #ffffff;
+  --text: #1e293b;
+  --sub: #64748b;
+  --line: #e2e8f0;
+  --acc: #6366f1;
+  --ok: #10b981;
+  --warn: #f59e0b;
+  --bad: #ef4444;
+  --info: #3b82f6;
+  --shadow: 0 1px 3px rgba(0,0,0,0.1);
+  --shadow-lg: 0 10px 40px rgba(0,0,0,0.1);
+  --transition: all 0.2s ease;
+  --radius: 16px;
+}
+
+[data-theme="dark"] {
+  --bg: #0f172a;
+  --card: #1e293b;
+  --text: #f1f5f9;
+  --sub: #94a3b8;
+  --line: #334155;
+  --acc: #818cf8;
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --bad: #f87171;
+  --info: #60a5fa;
+  --shadow: 0 1px 3px rgba(0,0,0,0.3);
+  --shadow-lg: 0 10px 40px rgba(0,0,0,0.4);
+}
+
+[data-theme="dark"] body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+[data-theme="dark"] aside {
+  background: rgba(30, 41, 59, 0.95);
+  border-right-color: var(--line);
+}
+
+[data-theme="dark"] .card {
+  background: var(--card);
+  border-color: var(--line);
+  box-shadow: var(--shadow);
+}
+
+[data-theme="dark"] input, [data-theme="dark"] select, [data-theme="dark"] textarea {
+  background: #0f172a;
+  color: var(--text);
+  border-color: var(--line);
+}
+
+[data-theme="dark"] table {
+  border-color: var(--line);
+}
+
+[data-theme="dark"] th {
+  background: #334155;
+  color: var(--text);
+}
+
+[data-theme="dark"] td {
+  border-color: var(--line);
+  color: var(--text);
+}
+
+[data-theme="dark"] tr:hover {
+  background: rgba(99, 102, 241, 0.1);
+}
+
+[data-theme="dark"] .login-box {
+  background: rgba(30, 41, 59, 0.98);
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="dark"] .login-bg {
+  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e1b4b 100%);
+}
+
+[data-theme="dark"] .kpi {
+  background: var(--card);
+  border-color: var(--line);
+}
+
+[data-theme="dark"] h1, [data-theme="dark"] h2, [data-theme="dark"] h3, [data-theme="dark"] h4 {
+  color: var(--text);
+}
+
+[data-theme="dark"] .empty-state {
+  background: var(--card);
+}
+
+[data-theme="dark"] .empty-state .icon {
+  opacity: 0.6;
+}
+
+/* Theme Toggle Button */
+.theme-toggle {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--card);
+  border: 2px solid var(--line);
+  cursor: pointer;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  transition: var(--transition);
+  z-index: 1000;
+}
+
+.theme-toggle:hover {
+  transform: scale(1.1);
+  box-shadow: 0 0 20px var(--acc);
+}
+
+/* ========================================
+   KEYBOARD SHORTCUT HINT
+   ======================================== */
+.kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-family: monospace;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  color: var(--sub);
+}
+
+.shortcut-hint {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 16px;
+  box-shadow: var(--shadow-lg);
+  font-size: 12px;
+  color: var(--sub);
+  z-index: 1000;
+  display: none;
+}
+
+.shortcut-hint.show {
+  display: block;
+  animation: fadeIn 0.2s ease;
+}
+
+.shortcut-hint h4 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.shortcut-hint table {
+  border: none;
+}
+
+.shortcut-hint td {
+  padding: 3px 8px;
+  border: none;
+}
+
+.shortcut-hint td:first-child {
+  text-align: right;
+}
+
+/* ========================================
+   NOTIFICATION TOAST
+   ======================================== */
+.toast {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  background: var(--card);
+  border-left: 4px solid var(--acc);
+  border-radius: 8px;
+  padding: 16px 20px;
+  box-shadow: var(--shadow-lg);
+  z-index: 10000;
+  animation: slideInRight 0.3s ease;
+  max-width: 350px;
+}
+
+.toast.success { border-left-color: var(--ok); }
+.toast.error { border-left-color: var(--bad); }
+.toast.warning { border-left-color: var(--warn); }
+
+.toast .title {
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--text);
+}
+
+.toast .message {
+  font-size: 13px;
+  color: var(--sub);
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
