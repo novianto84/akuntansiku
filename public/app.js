@@ -78,6 +78,16 @@ function drawNav(){
 }
 function go(m){cur=m;curSub="";curDetail=null;curDetailId=null;searchQ="";$("#title").textContent=m;drawNav();render();}
 window.goMaster=sub=>{curSub=sub;curDetail=null;curDetailId=null;searchQ="";$("#title").textContent="Master — "+sub;drawNav();render();};
+window.loadSistem=sub=>{
+ if(sub==='currency'){
+  const A=$("#app");
+  const currData=currencies;
+  A.innerHTML=`<div class="card"><h3><span class="card-icon">💱</span>Konfigurasi Mata Uang</h3>
+   <table><thead><tr><th>Kode</th><th>Nama</th><th>Simbol</th><th>Kurs (vs IDR)</th></tr></thead>
+   <tbody>${currData.map(c=>`<tr><td><b>${c.code}</b></td><td>${c.name}</td><td>${c.symbol}</td><td><input type="number" value="${c.rate}" min="1" style="width:120px" id="rate_${c.code}" onchange="updateCurrRate('${c.code}',this.value)"></td></tr>`).join("")}</tbody></table>
+   <p style="margin-top:16px;color:var(--sub)">Kurs ini digunakan untuk konversi mata uang dalam transaksi internasional</p></div>`;
+ }
+};
 window.goDetail=(type,id)=>{curDetail=type;curDetailId=id;render();};
 window.goBack=()=>{curDetail=null;curDetailId=null;render();};
 function searchBar(placeholder,onsrch){return `<div class="search-bar"><input type="text" id="search_input" placeholder="${placeholder}" value="${esc(searchQ)}" oninput="searchQ=this.value" onkeyup="if(event.key==='Enter'){${onsrch}}"><button class="go info" onclick="${onsrch}">Cari</button></div>`;}
@@ -117,6 +127,38 @@ function hideLoading(btn){
 }
 function coaSel(v){return `<select id="${v}">${COA.map(c=>`<option value="${c.id}">${c.account_code} — ${c.account_name}</option>`).join("")}</select>`;}
 function st(x){return `<span class="bdg b-${x}">${x}</span>`;}
+
+const currencies=[
+ {code:"IDR",name:"Rupiah Indonesia",symbol:"Rp",rate:1},
+ {code:"USD",name:"US Dollar",symbol:"$",rate:15800},
+ {code:"EUR",name:"Euro",symbol:"€",rate:17200},
+ {code:"SGD",name:"Singapore Dollar",symbol:"S$",rate:11800},
+ {code:"MYR",name:"Malaysian Ringgit",symbol:"RM",rate:3500},
+ {code:"JPY",name:"Japanese Yen",symbol:"¥",rate:105},
+ {code:"AUD",name:"Australian Dollar",symbol:"A$",rate:10400},
+ {code:"GBP",name:"British Pound",symbol:"£",rate:20000}
+];
+function getCurrency(code){return currencies.find(c=>c.code===code)||currencies[0];}
+function convertCurrency(amount,fromCode,toCode){
+ const from=getCurrency(fromCode);
+ const to=getCurrency(toCode);
+ if(from.code===to.code)return amount;
+ return Math.round(amount*from.rate/to.rate);
+}
+function formatCurrency(amount,code){
+ const c=getCurrency(code);
+ if(c.code==="IDR")return"Rp"+amount.toLocaleString("id-ID");
+ return c.symbol+" "+amount.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function currSelectHTML(id,defaultCode){
+ return `<select id="${id}">${currencies.map(c=>`<option value="${c.code}" ${c.code===defaultCode?"selected":""}>${c.code} - ${c.name}</option>`).join("")}</select>`;
+}
+window.updateCurrRate=async(code,rate)=>{
+ rate=+rate;
+ if(isNaN(rate)||rate<=0)return alert("Kurs harus positif");
+ const c=currencies.find(x=>x.code===code);
+ if(c){c.rate=rate;alert(code+" kurs diperbarui: "+rate);}
+};
 let GRIDS={};
 function gridHTML(gid){return `<table class="grid-table"><thead><tr><th>No</th><th>Barang</th><th>Deskripsi</th>${GRIDS[gid].cfg.wh?"<th>Gudang</th>":""}<th>Satuan</th><th>Qty</th><th>Harga</th>${GRIDS[gid].cfg.disc?"<th>D1%</th><th>D2%</th>":""}<th>Total</th><th></th></tr></thead><tbody id="${gid}_body"></tbody></table><button class="go" onclick="gridAdd('${gid}')">+ Tambah baris</button><div class="grid-sub">Subtotal:&nbsp;<b id="${gid}_sub">Rp 0</b></div>`;}
 function gridStart(gid,cfg){GRIDS[gid]={rows:[],cfg};const w=document.createElement("div");w.innerHTML=gridHTML(gid);const host=$("#"+gid+"_wrap");host.innerHTML="";host.appendChild(w);gridAdd(gid);}
@@ -208,6 +250,7 @@ async function renderSalesInvoiceDetail(id){
     <div class="info-item"><label>Customer</label><span>${esc(inv.customer_name)}</span></div>
     <div class="info-item"><label>Salesman</label><span>${esc(inv.salesperson||"-")}</span></div>
     <div class="info-item"><label>Komisi</label><span>${fmt(inv.commission_amount||0)}</span></div>
+    <div class="info-item"><label>Mata Uang</label><span>${esc(cust?.currency_code||"IDR")}</span></div>
    </div>
    <div class="card" style="margin-top:16px"><h3>Detail Baris</h3>
     <table><thead><tr><th>Barang</th><th>Deskripsi</th><th>Qty</th><th>Harga</th><th>Diskon</th><th>Total</th></tr></thead>
@@ -722,8 +765,8 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
   <div class="row">Kontak <select id="k_c"></select> Invoice <select id="k_inv" onchange="invCh()"></select>
   Nominal <input id="k_alloc" style="width:130px"><button class="go" onclick="addAlloc()">+ Alokasi</button></div>
   <div id="alocs"></div>
-  <div class="row">Tgl <input type="date" id="k_date" value="${today()}"> Catatan <input id="k_note" value="">
-  <button class="go" onclick="savePay()">Catat Pembayaran</button></div>
+   <div class="row">Tgl <input type="date" id="k_date" value="${today()}"> Catatan <input id="k_note" value=""> Kurs <input id="k_rate" type="number" min="1" value="1" step="0.01" style="width:100px">
+   <button class="go" onclick="savePay()">Catat Pembayaran</button></div>
   <p class="mut">Tips rekonsiliasi: bandingkan saldo akun 11001/11002 di Trial Balance dengan mutasi di bawah. Selisih = belum rekonsil.</p></div>
   <div class="card"><h3>Transfer Antar Kas / Bank</h3>
   <div class="row">Dari ${coaSel("t_from")} Ke ${coaSel("t_to")} Nominal <input id="t_amt" value="500000">
@@ -919,6 +962,7 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
    A.innerHTML=`<div class="card"><h3>Pelanggan (Customer + Akun Piutang)</h3>${searchBar("Cari pelanggan...","render()")}<table><tr><th>Kode</th><th>Nama</th><th>Email</th><th>Akun Piutang</th><th>Limit</th><th>Termin</th></tr>${filterRows(CUST,searchQ).map(x=>{const a=COA.find(c=>c.id===x.receivable_account_id);return `<tr class="clickable-row" onclick="goDetail('customer',${x.id})"><td>${esc(x.customer_code)}</td><td>${esc(x.customer_name)}</td><td>${esc(x.email||"")}</td><td>${a?esc(a.account_code+" "+a.account_name):""}</td><td>${fmt(x.credit_limit||0)}</td><td>${esc((x.terms||"")+" "+(x.term_days||""))}</td></tr>`;}).join("")}</table>
    <div class="row">Kode <input id="cu_c" value="CUST-002" style="width:90px"> Nama <input id="cu_n" value=""> Email <input id="cu_e" value="" style="width:150px">
    Akun Piutang <select id="cu_a">${COA.filter(c=>c.account_type==="ASSET").map(c=>`<option value="${c.id}"${c.account_code==="12001"?" selected":""}>${c.account_code} ${c.account_name}</option>`).join("")}</select></div>
+   <div class="row">Mata Uang ${currSelectHTML("cu_curr","IDR")}</div>
    <div class="row">Limit piutang (0=tak terbatas) <input id="cu_l" value="0" style="width:130px"> Termin <input id="cu_t" value="NET 30" style="width:90px"> Hari <input id="cu_d" value="30" style="width:60px">
    <button class="go" onclick="saveCU()">Tambah</button></div>
    <div class="row">Ubah limit: <select id="cu_id">${CUST.map(x=>`<option value="${x.id}">${x.customer_name}</option>`).join("")}</select>
@@ -929,6 +973,7 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
    A.innerHTML=`<div class="card"><h3>Pemasok (Vendor + Akun Utang)</h3>${searchBar("Cari vendor...","render()")}<table><tr><th>Kode</th><th>Nama</th><th>Email</th><th>Akun Utang</th><th>Limit</th></tr>${filterRows(VEND,searchQ).map(x=>{const a=COA.find(c=>c.id===x.payable_account_id);return `<tr class="clickable-row" onclick="goDetail('vendor',${x.id})"><td>${x.vendor_code}</td><td>${x.vendor_name}</td><td>${x.email||""}</td><td>${a?a.account_code+" "+a.account_name:""}</td><td>${fmt(x.credit_limit||0)}</td></tr>`;}).join("")}</table>
    <div class="row">Kode <input id="vn_c" value="VEND-002" style="width:90px"> Nama <input id="vn_n" value=""> Email <input id="vn_e" value="" style="width:150px">
    Akun Utang <select id="vn_a">${COA.filter(c=>c.account_type==="LIABILITY").map(c=>`<option value="${c.id}"${c.account_code==="21001"?" selected":""}>${c.account_code} ${c.account_name}</option>`).join("")}</select>
+   <div class="row">Mata Uang ${currSelectHTML("vn_curr","IDR")}</div>
    <button class="go" onclick="saveVN()">Tambah</button></div></div>
    <div class="card"><h3>Vendor & Limit Utang (0 = tanpa limit)</h3><table><tr><th>Kode</th><th>Nama</th><th>Limit</th></tr>${VEND.map(v=>`<tr><td>${v.vendor_code}</td><td>${v.vendor_name}</td><td>${fmt(v.credit_limit||0)}</td></tr>`).join("")}</table>
    <div class="row">Vendor <select id="vl_id">${VEND.map(v=>`<option value="${v.id}">${v.vendor_name}</option>`).join("")}</select>
@@ -967,7 +1012,8 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
    <div class="card"><h3>User & Peran</h3><table><tr><th>Username</th><th>Nama</th><th>Peran</th><th>Aktif</th></tr>${users.map(u=>`<tr><td>${u.username}</td><td>${u.full_name}</td><td>${u.role}</td><td>${u.is_active?"Ya":"Tidak"}</td></tr>`).join("")}</table>
    <div class="row">Username <input id="nu_u" value=""> Password <input id="nu_p" value=""> Nama <input id="nu_n" value="">
    Peran <select id="nu_r"><option>KASIR</option><option>GUDANG</option><option>HRD</option><option>FINANCE</option><option>MANAGER</option><option>ADMIN</option></select>
-   <button class="go" onclick="saveNU()">Tambah User</button></div></div>`:""}
+   <button class="go" onclick="saveNU()">Tambah User</button></div></div>
+   <div class="card" style="cursor:pointer" onclick="loadSistem('currency')"><h3>💱 Mata Uang</h3><p>Konfigurasi mata uang & kurs</p></div>`:""}
    ${ME.role!=="KASIR"?`<div class="card"><h3>Log Aktivitas</h3><table><tr><th>Waktu</th><th>User</th><th>Aksi</th></tr>${logs.slice(0,50).map(l=>`<tr><td>${esc(l.created_at||"")}</td><td>${esc(l.username)}</td><td>${esc(l.action)}</td></tr>`).join("")}</table></div>`:""}`;
   }
   else{
@@ -1063,7 +1109,7 @@ window.closeYear=async()=>{const y=$("#pe_y").value;if(!confirm(`Tutup buku tahu
 window.saveCU=async()=>{
  try{if(!$("#cu_n").value.trim())return alert("Nama pelanggan wajib diisi!");
  showLoading("#app button.go","Menyimpan...");
- await api("/api/customers",{method:"POST",body:JSON.stringify({customer_code:$("#cu_c").value,customer_name:$("#cu_n").value,email:$("#cu_e").value,receivable_account_id:+$("#cu_a").value})});
+ await api("/api/customers",{method:"POST",body:JSON.stringify({customer_code:$("#cu_c").value,customer_name:$("#cu_n").value,email:$("#cu_e").value,receivable_account_id:+$("#cu_a").value,currency_code:$("#cu_curr").value})});
  const cu=CUST.find(x=>x.customer_code===$("#cu_c").value);
  if(cu)await api("/api/customers/limit",{method:"POST",body:JSON.stringify({id:cu.id,credit_limit:+$("#cu_l").value,terms:$("#cu_t").value,term_days:+$("#cu_d").value})});
  loadM().then(render);}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
@@ -1071,7 +1117,7 @@ window.saveCUL=async()=>{try{await api("/api/customers/limit",{method:"POST",bod
 window.saveVN=async()=>{
  try{if(!$("#vn_n").value.trim())return alert("Nama vendor wajib diisi!");
  showLoading("#app button.go","Menyimpan...");
- await api("/api/vendors",{method:"POST",body:JSON.stringify({vendor_code:$("#vn_c").value,vendor_name:$("#vn_n").value,email:$("#vn_e").value,payable_account_id:+$("#vn_a").value})});
+ await api("/api/vendors",{method:"POST",body:JSON.stringify({vendor_code:$("#vn_c").value,vendor_name:$("#vn_n").value,email:$("#vn_e").value,payable_account_id:+$("#vn_a").value,currency_code:$("#vn_curr").value})});
  loadM().then(render);}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
 window.closeDoc=async(url,id)=>{try{await api(url,{method:"POST",body:JSON.stringify({id})});render();}catch(e){alert(e.message)}};
 window.addQ=()=>{const id=+$("#q_item").value;const[uc,cv]=$("#q_unit").value.split("|");_ql.push({item_id:id,qty:+$("#q_qty").value,price:+$("#q_price").value,description:$("#q_desc").value,unit_code:uc,unit_conv:+cv});$("#qlines").innerHTML=_ql.map(x=>`<div>${x.qty} ${x.unit_code} item#${x.item_id} ${x.description||""}</div>`).join("");};
@@ -1415,8 +1461,10 @@ window.saveNU=async()=>{try{await api("/api/users",{method:"POST",body:JSON.stri
 window.savePay=async()=>{
  try{const tot=_al.reduce((a,x)=>a+x.amount,0);
  showLoading("#app button.go","Menyimpan...");
- await api("/api/payments",{method:"POST",body:JSON.stringify({kind:$("#k_kind").value,cash_account_id:+$("#k_cash").value,contact_id:+$("#k_c").value,amount:tot,date:$("#k_date").value,note:$("#k_note").value,allocations:_al})});
- alert("Pembayaran "+fmt(tot)+" tercatat");render();}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
+ const rate=+$("#k_rate").value||1;
+ const curr=(_cs.find(c=>c.id===+$("#k_c").value)?.currency_code||"IDR");
+ await api("/api/payments",{method:"POST",body:JSON.stringify({kind:$("#k_kind").value,cash_account_id:+$("#k_cash").value,contact_id:+$("#k_c").value,amount:tot,date:$("#k_date").value,note:$("#k_note").value,allocations:_al,currency:curr,exchange_rate:rate})});
+ alert("Pembayaran "+formatCurrency(tot,curr)+" tercatat");render();}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
 window.kindCh=()=>{const k=$("#k_kind").value;const cs=k==="AR"?CUST:VEND;const nm=k==="AR"?"customer_name":"vendor_name";
  $("#k_c").innerHTML=cs.map(c=>`<option value="${c.id}">${c[nm]}</option>`).join("");
  const ag=k==="AR"?_ag:_agAP;
