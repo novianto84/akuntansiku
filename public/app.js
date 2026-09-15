@@ -23,6 +23,13 @@ function logout(){localStorage.removeItem("tok");ME=null;location.reload();}
 window.chPass=async()=>{const o=prompt("Password lama:");if(!o)return;const n=prompt("Password baru (min 6 karakter):");if(!n)return;
  try{await api("/api/change-password",{method:"POST",body:JSON.stringify({old:o,new:n})});alert("Password diganti");}catch(e){alert(e.message)}};
 async function boot(){
+ // Canvas roundRect polyfill
+ if(!CanvasRenderingContext2D.prototype.roundRect){
+  CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h,r){
+   r=Math.min(r||0,w/2,h/2);
+   this.moveTo(x+r,y);this.arcTo(x+w,y,x+w,y+h,r);this.arcTo(x+w,y+h,x,y+h,r);this.arcTo(x,y+h,x,y,r);this.arcTo(x,y,x+w,y,r);this.closePath();
+  };
+ }
  if(!tok())return loginScreen();
  try{ME=await api("/api/me");}
  catch(e){return loginScreen();}
@@ -401,7 +408,9 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
    <div id="ab_out" class="mut">Lokasi GPS diambil otomatis dari browser.</div></div></div>
    <div class="card"><h3><span class="card-icon">📊</span>Omzet 6 Bulan Terakhir</h3><div id="ch" style="padding:16px 0"></div></div>
    <div class="card"><h3><span class="card-icon">⏰</span>Lewat Jatuh Tempo</h3><div id="due">Memuat…</div></div>
-   <div class="card"><h3><span class="card-icon">📝</span>Transaksi Terakhir</h3><div id="recent_tx">Memuat...</div></div>`;
+    <div class="card"><h3><span class="card-icon">📝</span>Transaksi Terakhir</h3><div id="recent_tx">Memuat...</div></div>
+    <div class="card"><h3><span class="card-icon">📊</span>Omzet 6 Bulan Terakhir</h3><canvas id="chartOmzet" width="400" height="200"></canvas></div>
+    <div class="card"><h3><span class="card-icon">💰</span>Piutang & Hutang</h3><canvas id="chartPH" width="400" height="200"></canvas></div>`;
   api("/api/employees").then(e=>{$("#ab_emp").innerHTML=e.filter(x=>x.is_active).map(x=>`<option value="${x.id}">${x.full_name}</option>`).join("");}).catch(()=>{$("#ab_out").textContent="Gagal muat karyawan.";});
    api("/api/dashboard/monthly").then(m=>{const mx=Math.max(1,...m.map(x=>x.omzet));
     const colors=["#667eea","#764ba2","#f093fb","#f5576c","#4facfe","#43e97b"];
@@ -418,10 +427,94 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
     else{html+='<div class="empty-state" style="padding:16px"><div class="icon">✅</div><p>Utang aman</p></div>';}
      html+="</div></div>";
      $("#due").innerHTML=html;}).catch(()=>{$("#due").textContent="—";});
-    api("/api/sales").then(sales=>{
-     const recent=sales.slice(-5).reverse();
-     $("#recent_tx").innerHTML=recent.length?`<table><thead><tr><th>No</th><th>Tgl</th><th>Customer</th><th>Total</th><th>Status</th></tr></thead><tbody>${recent.map(x=>`<tr class="clickable-row" onclick="goDetail('sales-invoice',${x.id})"><td><b>${x.invoice_number}</b></td><td>${x.transaction_date}</td><td>${esc(x.customer_name)}</td><td>${fmt(x.total_amount)}</td><td>${st(x.status)}</td></tr>`).join("")}</tbody></table>`:'<div class="empty-state" style="padding:16px"><div class="icon">📝</div><p>Belum ada transaksi</p></div>';
-    }).catch(()=>{});
+     api("/api/sales").then(sales=>{
+      const recent=sales.slice(-5).reverse();
+      $("#recent_tx").innerHTML=recent.length?`<table><thead><tr><th>No</th><th>Tgl</th><th>Customer</th><th>Total</th><th>Status</th></tr></thead><tbody>${recent.map(x=>`<tr class="clickable-row" onclick="goDetail('sales-invoice',${x.id})"><td><b>${x.invoice_number}</b></td><td>${x.transaction_date}</td><td>${esc(x.customer_name)}</td><td>${fmt(x.total_amount)}</td><td>${st(x.status)}</td></tr>`).join("")}</tbody></table>`:'<div class="empty-state" style="padding:16px"><div class="icon">📝</div><p>Belum ada transaksi</p></div>';
+     }).catch(()=>{});
+
+     // Draw omzet chart
+     setTimeout(async()=>{
+      try{
+       const sales=await api("/api/sales");
+       const now=new Date();
+       const months=[];
+       const amounts=[];
+       for(let i=5;i>=0;i--){
+        const d=new Date(now.getFullYear(),now.getMonth()-i,1);
+        const label=d.toLocaleDateString("id-ID",{month:"short"});
+        const m=d.getMonth();
+        const y=d.getFullYear();
+        const total=sales.filter(x=>{
+         const xd=new Date(x.transaction_date);
+         return xd.getMonth()===m&&xd.getFullYear()===y;
+        }).reduce((a,x)=>a+x.total_amount,0);
+        months.push(label);
+        amounts.push(total);
+       }
+       const canvas=document.getElementById("chartOmzet");
+       if(canvas){
+        const ctx=canvas.getContext("2d");
+        const max=Math.max(...amounts,1);
+        const barW=50;
+        const gap=15;
+        const startX=50;
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        ctx.font="11px Inter";
+        // Y axis
+        for(let i=0;i<=4;i++){
+         const y=180-i*40;
+         ctx.fillStyle="#94a3b8";
+         ctx.fillText(fmt(max*i/4).replace(",00",""),0,y+4);
+         ctx.strokeStyle="#e2e8f0";
+         ctx.beginPath();ctx.moveTo(45,y);ctx.lineTo(400,y);ctx.stroke();
+        }
+        // Bars
+        months.forEach((m,i)=>{
+         const x=startX+i*(barW+gap);
+         const h=(amounts[i]/max)*160;
+         const grad=ctx.createLinearGradient(x,180-h,x,180);
+         grad.addColorStop(0,"#6366f1");
+         grad.addColorStop(1,"#818cf8");
+         ctx.fillStyle=grad;
+         ctx.beginPath();
+         ctx.roundRect(x,180-h,barW,h,4);
+         ctx.fill();
+         ctx.fillStyle="#1e293b";
+         ctx.textAlign="center";
+         ctx.fillText(m,x+barW/2,195);
+         if(amounts[i]>0){
+          ctx.fillText(fmt(amounts[i]).replace(",00",""),x+barW/2,175-h);
+         }
+        });
+       }
+      }catch(e){console.log("Chart error:",e);}
+     },200);
+
+     // Draw piutang/hutang chart
+     setTimeout(async()=>{
+      try{
+       const sales=await api("/api/sales");
+       const purchases=await api("/api/purchases");
+       const piutang=sales.reduce((a,x)=>a+x.outstanding,0);
+       const hutang=purchases.reduce((a,x)=>a+x.outstanding,0);
+       const canvas=document.getElementById("chartPH");
+       if(canvas){
+        const ctx=canvas.getContext("2d");
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        const max=Math.max(piutang,hutang,1);
+        // Piutang bar
+        ctx.fillStyle="#10b981";
+        ctx.beginPath();ctx.roundRect(50,50,((piutang/max)*300),30,4);ctx.fill();
+        ctx.fillStyle="#1e293b";ctx.font="bold 12px Inter";
+        ctx.fillText("Piutang: "+fmt(piutang),50,100);
+        // Hutang bar
+        ctx.fillStyle="#ef4444";
+        ctx.beginPath();ctx.roundRect(50,130,((hutang/max)*300),30,4);ctx.fill();
+        ctx.fillStyle="#1e293b";
+        ctx.fillText("Hutang: "+fmt(hutang),50,180);
+       }
+      }catch(e){console.log("Chart error:",e);}
+     },300);
  }
  if(cur==="Penjualan"){
   const sub=window._psub||"invoice";
@@ -702,24 +795,31 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
   ${a.map(x=>`<tr><td>${x.asset_code}</td><td>${x.asset_name}</td><td>${fmt(x.cost)}</td><td>${fmt(x.accum_depr)}</td><td><button class="go" onclick="susut(${x.id})">Susutkan bulan ini</button></td></tr>`).join("")}</table></div>`;
  }
  if(cur==="Laporan"){
-  const tb=await api("/api/reports/trial-balance");const pl=await api("/api/reports/profit-loss");const bs=await api("/api/reports/balance-sheet");
-  const ar=await api("/api/aging?type=AR");const ap=await api("/api/aging?type=AP");const cf=await api("/api/reports/cash-flow");
-  const ag=t=>`<table><tr><th>No</th><th>Jatuh Tempo</th><th>Kontak</th><th>Sisa</th><th>Telat</th><th>Bucket</th></tr>${t.map(r=>`<tr><td>${r.invoice_number}</td><td>${r.due_date}</td><td>${r.contact}</td><td>${fmt(r.outstanding)}</td><td>${r.days_overdue} hr</td><td>${r.bucket}</td></tr>`).join("")||`<tr><td colspan="6" class="mut">Tidak ada outstanding.</td></tr>`}</table>`;
-  A.innerHTML=`<div class="card"><h3>Laporan PPN (Keluaran vs Masukan)</h3>
-  <div class="row">Bulan <input type="month" id="ppn_m" value="${today().slice(0,7)}"><button class="go" onclick="loadPPN()">Tampilkan</button></div><div id="ppn_out"></div></div>
-  <div class="card"><h3>Laporan per Cabang</h3>
-  <div class="row">Bulan <input type="month" id="br_m" value="${today().slice(0,7)}"><button class="go" onclick="loadBranch()">Tampilkan</button></div><div id="br_out"></div></div>
-  <div class="card"><h3>Target & Komisi Salesman</h3>
-  <div class="row">Bulan <input type="month" id="tg_m" value="${today().slice(0,7)}"><button class="go" onclick="loadTargets()">Tampilkan</button></div><div id="tg_out"></div></div>
-  <div class="card"><h3>Arus Kas — Net: ${fmt(cf.net_total)}</h3>
-  <table><tr><th>Kategori</th><th>Masuk</th><th>Keluar</th><th>Net</th></tr>${cf.summary.map(s=>`<tr><td>${s.kategori}</td><td>${fmt(s.masuk)}</td><td>${fmt(s.keluar)}</td><td>${fmt(s.net)}</td></tr>`).join("")}</table>
-  <details><summary class="mut">Rincian mutasi kas (${cf.detail.length})</summary><table><tr><th>Tgl</th><th>Jurnal</th><th>Ket</th><th>Kategori</th><th>Masuk</th><th>Keluar</th></tr>${cf.detail.map(d=>`<tr><td>${d.tanggal}</td><td>${d.jurnal}</td><td>${d.keterangan}</td><td>${d.kategori}</td><td>${fmt(d.masuk)}</td><td>${fmt(d.keluar)}</td></tr>`).join("")}</table></details></div>
-  <div class="card"><h3>Aging Piutang (AR)</h3>${ag(ar)}</div>
-  <div class="card"><h3>Aging Utang (AP)</h3>${ag(ap)}</div>
-  <div class="card"><h3>Neraca Saldo (Trial Balance)</h3><button class="go" onclick="csvTB()">Export CSV</button> <button class="go" onclick="csvStock()">CSV Stok</button><table><tr><th>Kode</th><th>Akun</th><th>Debit</th><th>Kredit</th></tr>
-  ${tb.map(r=>`<tr><td>${r.account_code}</td><td>${r.account_name}</td><td>${fmt(r.d)}</td><td>${fmt(r.k)}</td></tr>`).join("")}</table></div>
-  <div class="card"><h3>Laba / Rugi — NET: ${fmt(pl.net)}</h3><table>${pl.lines.map(r=>`<tr><td>${r.account_code}</td><td>${r.account_name}</td><td>${fmt(r.net_rev||r.net_exp)}</td></tr>`).join("")}</table></div>
-  <div class="card"><h3>Neraca — Laba berjalan: ${fmt(bs.net_income)}</h3><table>${bs.lines.map(r=>`<tr><td>${r.account_code}</td><td>${r.account_name}</td><td>${fmt(r.net_db||r.net_cr)}</td></tr>`).join("")}</table></div>`;
+  const now=new Date();
+  const curMonth=now.getMonth()+1;
+  const curYear=now.getFullYear();
+  
+  // Generate month options
+  const months=["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+  const monthOpts=months.map((m,i)=>`<option value="${i+1}" ${i+1===curMonth?"selected":""}>${m}</option>`).join("");
+  const yearOpts=[curYear-1,curYear,curYear+1].map(y=>`<option value="${y}" ${y===curYear?"selected":""}>${y}</option>`).join("");
+  
+  A.innerHTML=`<div class="page-header"><h1>📊 Laporan</h1></div>
+ <div class="grid" style="grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:24px">
+  <div class="card" style="cursor:pointer" onclick="loadReport('penjualan')"><h3>📈 Laporan Penjualan</h3><p>Faktur penjualan per periode</p></div>
+  <div class="card" style="cursor:pointer" onclick="loadReport('pembelian')"><h3>📉 Laporan Pembelian</h3><p>Faktur pembelian per periode</p></div>
+  <div class="card" style="cursor:pointer" onclick="loadReport('laba_rugi')"><h3>💹 Laba Rugi</h3><p>Pendapatan vs Beban</p></div>
+  <div class="card" style="cursor:pointer" onclick="loadReport('piutang')"><h3>💰 Aging Piutang</h3><p>Umur piutang pelanggan</p></div>
+  <div class="card" style="cursor:pointer" onclick="loadReport('hutang')"><h3>💳 Aging Hutang</h3><p>Umur hutang vendor</p></div>
+  <div class="card" style="cursor:pointer" onclick="loadReport('buku_besar')"><h3>📒 Buku Besar</h3><p>Mutasi per akun</p></div>
+ </div>
+ <div class="card" id="reportOutput">
+  <h3>Pilih laporan di atas untuk menampilkan hasil</h3>
+  <div class="empty-state"><div class="icon">📊</div><p>Klik salah satu kartu laporan</p></div>
+ </div>`;
+ 
+ // Store period selectors globally for report functions
+ window._reportPeriod={month:curMonth,year:curYear};
  }
  if(cur==="Master"){
   let users=[],logs=[];
@@ -1055,6 +1155,125 @@ function periodeFilter(monthInputId,yearInputId,records){
   const d=new Date(r.transaction_date);
   return d.getMonth()+1===m&&d.getFullYear()===y;
  });
+}
+async function loadReport(type){
+ const months=["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+ const m=window._reportPeriod?.month||new Date().getMonth()+1;
+ const y=window._reportPeriod?.year||new Date().getFullYear();
+ const out=$("#reportOutput");
+ if(!out)return;
+ out.innerHTML="<div class='empty-state'>Memuat data...</div>";
+ 
+ try{
+  if(type==='penjualan'){
+   const sales=await api("/api/sales");
+   const filtered=sales.filter(x=>{const d=new Date(x.transaction_date);return d.getMonth()+1===m&&d.getFullYear()===y;});
+   const total=filtered.reduce((a,x)=>a+x.total_amount,0);
+   const paid=filtered.reduce((a,x)=>a+x.paid,0);
+   const outstanding=filtered.reduce((a,x)=>a+x.outstanding,0);
+   out.innerHTML=`<h3>📈 Laporan Penjualan - ${months[m-1]} ${y}</h3>
+    <div class="kpi-row"><div class="kpi"><label>Total Faktur</label><b>${filtered.length}</b></div>
+    <div class="kpi success"><label>Total Omzet</label><b>${fmt(total)}</b></div>
+    <div class="kpi info"><label>Sudah Dibayar</label><b>${fmt(paid)}</b></div>
+    <div class="kpi warning"><label>Belum Dibayar</label><b>${fmt(outstanding)}</b></div></div>
+    <table><thead><tr><th>No</th><th>Tanggal</th><th>Customer</th><th>Total</th><th>Dibayar</th><th>Sisa</th><th>Status</th></tr></thead>
+    <tbody>${filtered.map(x=>`<tr class="clickable-row" onclick="goDetail('sales-invoice',${x.id})"><td>${esc(x.invoice_number)}</td><td>${x.transaction_date}</td><td>${esc(x.customer_name)}</td><td>${fmt(x.total_amount)}</td><td>${fmt(x.paid)}</td><td>${fmt(x.outstanding)}</td><td>${st(x.status)}</td></tr>`).join("")}</tbody></table>`;
+  }
+  else if(type==='pembelian'){
+   const purchases=await api("/api/purchases");
+   const filtered=purchases.filter(x=>{const d=new Date(x.transaction_date);return d.getMonth()+1===m&&d.getFullYear()===y;});
+   const total=filtered.reduce((a,x)=>a+x.total_amount,0);
+   const paid=filtered.reduce((a,x)=>a+x.paid,0);
+   const outstanding=filtered.reduce((a,x)=>a+x.outstanding,0);
+   out.innerHTML=`<h3>📉 Laporan Pembelian - ${months[m-1]} ${y}</h3>
+    <div class="kpi-row"><div class="kpi"><label>Total Faktur</label><b>${filtered.length}</b></div>
+    <div class="kpi success"><label>Total Belanja</label><b>${fmt(total)}</b></div>
+    <div class="kpi info"><label>Sudah Dibayar</label><b>${fmt(paid)}</b></div>
+    <div class="kpi warning"><label>Belum Dibayar</label><b>${fmt(outstanding)}</b></div></div>
+    <table><thead><tr><th>No</th><th>Tanggal</th><th>Vendor</th><th>Total</th><th>Dibayar</th><th>Sisa</th><th>Status</th></tr></thead>
+    <tbody>${filtered.map(x=>`<tr class="clickable-row" onclick="goDetail('purchase-invoice',${x.id})"><td>${esc(x.invoice_number)}</td><td>${x.transaction_date}</td><td>${esc(x.vendor_name)}</td><td>${fmt(x.total_amount)}</td><td>${fmt(x.paid)}</td><td>${fmt(x.outstanding)}</td><td>${st(x.status)}</td></tr>`).join("")}</tbody></table>`;
+  }
+  else if(type==='laba_rugi'){
+   const sales=await api("/api/sales");
+   const purchases=await api("/api/purchases");
+   const sFiltered=sales.filter(x=>{const d=new Date(x.transaction_date);return d.getMonth()+1===m&&d.getFullYear()===y;});
+   const pFiltered=purchases.filter(x=>{const d=new Date(x.transaction_date);return d.getMonth()+1===m&&d.getFullYear()===y;});
+   const omzet=sFiltered.reduce((a,x)=>a+x.total_amount,0);
+   const cogs=pFiltered.reduce((a,x)=>a+x.total_amount,0);
+   const laba=omzet-cogs;
+   const margin=omzet>0?((laba/omzet)*100).toFixed(1):0;
+   out.innerHTML=`<h3>💹 Laba Rugi - ${months[m-1]} ${y}</h3>
+    <div class="kpi-row"><div class="kpi success"><label>Omzet</label><b>${fmt(omzet)}</b></div>
+    <div class="kpi warning"><label>HPP/Beban</label><b>${fmt(cogs)}</b></div>
+    <div class="kpi" style="background:${laba>=0?'var(--ok)':'var(--bad)'}"><label>Laba Bersih</label><b>${fmt(laba)}</b></div>
+    <div class="kpi"><label>Margin</label><b>${margin}%</b></div></div>`;
+  }
+  else if(type==='piutang'){
+   const sales=await api("/api/sales");
+   const open=sales.filter(x=>x.outstanding>0);
+   const aging=open.map(x=>{
+    const due=new Date(x.due_date||x.transaction_date);
+    const days=Math.floor((new Date()-due)/(1000*60*60*24));
+    let bucket="Belum Jatuh Tempo";
+    if(days>90)bucket="Lewat 90 Hari";
+    else if(days>60)bucket="61-90 Hari";
+    else if(days>30)bucket="31-60 Hari";
+    else if(days>0)bucket="1-30 Hari";
+    return{...x,aging:bucket};
+   });
+   const grouped=aging.reduce((a,x)=>{a[x.aging]=(a[x.aging]||0)+x.outstanding;return a;},{});
+   out.innerHTML=`<h3>💰 Aging Piutang</h3>
+    <div class="kpi-row">${Object.entries(grouped).map(([k,v])=>`<div class="kpi"><label>${k}</label><b>${fmt(v)}</b></div>`).join("")}</div>
+    <table><thead><tr><th>No</th><th>Customer</th><th>Jatuh Tempo</th><th>Sisa</th><th>Aging</th></tr></thead>
+    <tbody>${aging.sort((a,b)=>b.outstanding-a.outstanding).map(x=>`<tr><td>${esc(x.invoice_number)}</td><td>${esc(x.customer_name)}</td><td>${x.due_date||"-"}</td><td>${fmt(x.outstanding)}</td><td>${x.aging}</td></tr>`).join("")}</tbody></table>`;
+  }
+  else if(type==='hutang'){
+   const purchases=await api("/api/purchases");
+   const open=purchases.filter(x=>x.outstanding>0);
+   const aging=open.map(x=>{
+    const due=new Date(x.due_date||x.transaction_date);
+    const days=Math.floor((new Date()-due)/(1000*60*60*24));
+    let bucket="Belum Jatuh Tempo";
+    if(days>90)bucket="Lewat 90 Hari";
+    else if(days>60)bucket="61-90 Hari";
+    else if(days>30)bucket="31-60 Hari";
+    else if(days>0)bucket="1-30 Hari";
+    return{...x,aging:bucket};
+   });
+   const grouped=aging.reduce((a,x)=>{a[x.aging]=(a[x.aging]||0)+x.outstanding;return a;},{});
+   out.innerHTML=`<h3>💳 Aging Hutang</h3>
+    <div class="kpi-row">${Object.entries(grouped).map(([k,v])=>`<div class="kpi"><label>${k}</label><b>${fmt(v)}</b></div>`).join("")}</div>
+    <table><thead><tr><th>No</th><th>Vendor</th><th>Jatuh Tempo</th><th>Sisa</th><th>Aging</th></tr></thead>
+    <tbody>${aging.sort((a,b)=>b.outstanding-a.outstanding).map(x=>`<tr><td>${esc(x.invoice_number)}</td><td>${esc(x.vendor_name)}</td><td>${x.due_date||"-"}</td><td>${fmt(x.outstanding)}</td><td>${x.aging}</td></tr>`).join("")}</tbody></table>`;
+  }
+  else if(type==='buku_besar'){
+   const accounts=await api("/api/accounts");
+   const journals=await api("/api/journals");
+   const filtered=journals.filter(x=>{const d=new Date(x.transaction_date);return d.getMonth()+1===m&&d.getFullYear()===y;});
+   const rows=[];
+   for(const acc of accounts){
+    const lines=[];
+    for(const j of filtered){
+     for(const l of (j.lines||[])){
+      if(l.account_id===acc.id){
+       lines.push({date:j.transaction_date,no:j.journal_number,desc:j.description,debit:l.debit,credit:l.credit});
+      }
+     }
+    }
+    if(lines.length>0){
+     const totalDebit=lines.reduce((a,l)=>a+l.debit,0);
+     const totalCredit=lines.reduce((a,l)=>a+l.credit,0);
+     rows.push({code:acc.account_code,name:acc.account_name,lines,totalDebit,totalCredit});
+    }
+   }
+   out.innerHTML=`<h3>📒 Buku Besar - ${months[m-1]} ${y}</h3>
+    ${rows.map(r=>`<div style="margin-bottom:24px"><h4>${esc(r.code)} - ${esc(r.name)}</h4>
+    <table><thead><tr><th>Tanggal</th><th>No</th><th>Uraian</th><th>Debit</th><th>Kredit</th></tr></thead>
+    <tbody>${r.lines.map(l=>`<tr><td>${l.date}</td><td>${esc(l.no)}</td><td>${esc(l.desc)}</td><td>${fmt(l.debit)}</td><td>${fmt(l.credit)}</td></tr>`).join("")}
+    <tr style="font-weight:bold;background:var(--card)"><td colspan="3">Total</td><td>${fmt(r.totalDebit)}</td><td>${fmt(r.totalCredit)}</td></tr>
+    </tbody></table></div>`).join("")}`;
+  }
+ }catch(e){out.innerHTML=`<div class="card">❌ Error: ${e.message}</div>`;}
 }
 window.csvTB=async()=>{const tb=await api("/api/reports/trial-balance");csv("trial-balance.csv",[["Kode","Akun","Tipe","Debit","Kredit"],...tb.map(r=>[r.account_code,r.account_name,r.account_type,r.d,r.k])]);};
 window.csvStock=async()=>{const s=await api("/api/stock");csv("stok.csv",[["Kode","Barang","Gudang","Stok","AvgCost","Nilai"],...s.map(x=>[x.item_code,x.item_name,x.warehouse,x.stock,x.avg_cost,x.value])]);};
