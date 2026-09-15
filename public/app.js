@@ -521,7 +521,8 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
   const inv=await api("/api/sales");const rets=await api("/api/returns?type=SALES");
   const sq=await api("/api/quotations");const so=await api("/api/sales-orders");const dn=await api("/api/deliveries");
    let h=`<div class="row">${[["quotation","Penawaran"],["order","Pesanan"],["delivery","Surat Jalan"],["invoice","Faktur"],["return","Retur"],["cn","CN (Credit Note)"],["dn","DN (Debit Note)"]].map(t=>`<button class="go"${sub===t[0]?"":' style="opacity:.55"'} onclick="_psub='${t[0]}';render()">${t[1]}</button>`).join("")}</div>`;
-  if(sub==="quotation"){
+   h+=`<div class="row" style="margin:16px 0"><button class="go" onclick="batchPrintInvoices()">🖨️ Batch Print Faktur</button></div>`;
+   if(sub==="quotation"){
    h+=`<div class="card"><h3>Penawaran Penjualan (non-posting)</h3>
    <div class="row">Customer <select id="q_cust">${CUST.map(c=>`<option value="${c.id}">${c.customer_name}</option>`).join("")}</select>
    Tgl <input type="date" id="q_date" value="${today()}"> PPN% <input id="q_tax" value="11" style="width:60px"></div>
@@ -766,26 +767,97 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
   window._jl=[];
   api("/api/period-locks").then(l=>{$("#locks").innerHTML=l.length?("Terkunci: "+l.map(x=>x.year+" (oleh "+x.locked_by+")").join(", ")):"Belum ada periode terkunci.";}).catch(()=>{$("#locks").textContent="";});
  }
- if(cur==="Persediaan"){
-  const s=await api("/api/stock");
-  const invItems=ITEMS.filter(i=>i.item_type==="INVENTORY");
-  A.innerHTML=`<div class="card"><h3>Kartu Stok (SUM in − out) + HPP Average</h3>
-  <table><tr><th>Barang</th><th>Gudang</th><th>Stok</th><th>Avg Cost</th></tr>${s.map(x=>`<tr><td>${x.item_code} ${x.item_name}</td><td>${x.warehouse}</td><td>${x.stock}</td><td>${fmt(x.avg_cost)}</td></tr>`).join("")}</table>
-  <div class="row">Lihat kartu: <select id="sc">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select><button class="go" onclick="card()">Tampilkan</button></div><div id="card"></div></div>
-  <div class="card"><h3>💡 Saran Order Cerdas (30 hari terakhir, buffer 10 hari)</h3><div id="reorder">Memuat…</div></div>
-  <div class="card"><h3>Stock Opname (penyesuaian + jurnal selisih)</h3>
-  <div class="row">Barang <select id="o_item">${invItems.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
-  Gudang <select id="o_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select>
-  Stok fisik <input id="o_qty" style="width:80px"> Tgl <input type="date" id="o_date" value="${today()}">
-  <button class="go" onclick="opname()">Simpan Opname</button></div></div>
-  <div class="card"><h3>Mutasi Antar Gudang</h3>
-  <div class="row">Barang <select id="t_item">${invItems.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
-  Dari <select id="t_from">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select>
-  Ke <select id="t_to">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select>
-  Qty <input id="t_qty" style="width:80px"> Tgl <input type="date" id="t_date" value="${today()}">
-  <button class="go" onclick="transfer()">Pindahkan</button></div></div>`;
-  api("/api/reorder").then(r=>{$("#reorder").innerHTML=`<table><tr><th>Barang</th><th>Stok</th><th>Laku/bln</th><th>Tahan</th><th>Saran Order</th><th>Status</th></tr>${r.map(x=>`<tr><td>${x.item_code}</td><td>${x.stock}</td><td>${x.rata_hari}/hr</td><td>${x.tahan_hari} hr</td><td>${x.saran_order}</td><td>${x.status}</td></tr>`).join("")}</table>`;}).catch(e=>{$("#reorder").textContent=e.message;});
- }
+  if(cur==="Persediaan"){
+   const s=await api("/api/stock");
+   const invItems=ITEMS.filter(i=>i.item_type==="INVENTORY");
+   const stab=window._ssub||"default";
+   let h=`<div class="row">${[["default","📦 Kartu Stok"],["sa","📝 Stok Opname"],["adj","🔧 Adjustment"]].map(t=>`<button class="go"${stab===t[0]?"":' style="opacity:.55"'} onclick="_ssub='${t[0]}';render()">${t[1]}</button>`).join("")}</div>`;
+   if(stab==="default"){
+   h+=`<div class="card"><h3>Kartu Stok (SUM in − out) + HPP Average</h3>
+   <table><tr><th>Barang</th><th>Gudang</th><th>Stok</th><th>Avg Cost</th></tr>${s.map(x=>`<tr><td>${x.item_code} ${x.item_name}</td><td>${x.warehouse}</td><td>${x.stock}</td><td>${fmt(x.avg_cost)}</td></tr>`).join("")}</table>
+   <div class="row">Lihat kartu: <select id="sc">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select><button class="go" onclick="card()">Tampilkan</button></div><div id="card"></div></div>
+   <div class="card"><h3>💡 Saran Order Cerdas (30 hari terakhir, buffer 10 hari)</h3><div id="reorder">Memuat…</div></div>
+   <div class="card"><h3>Stock Opname (penyesuaian + jurnal selisih)</h3>
+   <div class="row">Barang <select id="o_item">${invItems.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
+   Gudang <select id="o_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select>
+   Stok fisik <input id="o_qty" style="width:80px"> Tgl <input type="date" id="o_date" value="${today()}">
+   <button class="go" onclick="opname()">Simpan Opname</button></div></div>
+   <div class="card"><h3>Mutasi Antar Gudang</h3>
+   <div class="row">Barang <select id="t_item">${invItems.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
+   Dari <select id="t_from">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select>
+   Ke <select id="t_to">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select>
+   Qty <input id="t_qty" style="width:80px"> Tgl <input type="date" id="t_date" value="${today()}">
+   <button class="go" onclick="transfer()">Pindahkan</button></div></div>`;
+   }
+   if(stab==='sa'){
+    h+=`<div class="grid" style="grid-template-columns:1fr 1fr;gap:24px">
+    <div class="card"><h3><span class="card-icon">📝</span>Form Stok Opname</h3>
+    <div class="grid grid-2">
+    <div class="field"><label>Tanggal</label><input id="sa_d" type="date"></div>
+    <div class="field"><label>Gudang</label><select id="sa_wh"><option value="">Pilih...</option>${WH.map(x=>`<option value="${x.id}">${esc(x.warehouse_name)}</option>`).join("")}</select></div>
+    </div>
+    <div class="field"><label>Catatan</label><input id="sa_note" placeholder="Catatan opname"></div>
+    <div class="card" style="background:#f0fdf4;border:1px solid #22c55e33">
+    <div style="display:flex;align-items:center;gap:12px">
+    <div class="field" style="flex:2"><label>Barang</label><select id="sa_it"><option value="">Pilih...</option>${ITEMS.map(x=>`<option value="${x.id}">${esc(x.item_name)} [${esc(x.item_code)}]</option>`).join("")}</select></div>
+    <div class="field" style="flex:1"><label>Stok Sistem</label><input id="sa_sys" type="number" readonly></div>
+    <div class="field" style="flex:1"><label>Stok Fisik</label><input id="sa_fisik" type="number" min="0"></div>
+    <div class="field" style="flex:1"><label>Selisih</label><input id="sa_selisih" type="number" readonly></div>
+    <button class="go danger" style="margin-top:20px" onclick="addSALine()">+ Tambah</button>
+    </div>
+    </div>
+    <button class="go" onclick="saveSA()" style="width:100%">Simpan Stok Opname</button>
+    </div>
+    <div class="card"><h3>Riwayat Stok Opname</h3><div id="sa_list">Memuat...</div></div></div>`;
+    saLines=[];
+    api("/api/stock-adjustments").then(adj=>{
+    if($("#sa_list"))$("#sa_list").innerHTML=adj.filter(x=>x.type==="OPNAME").slice(-10).reverse().map(x=>`<div style="padding:8px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
+    <div><b>${esc(x.adjustment_number||"ADJ-"+x.id)}</b> - ${x.transaction_date} - ${esc(x.note||"-")}</div>
+    <button class="go" onclick="viewSA(${x.id})">Lihat</button></div>`).join("")||"<div class='empty-state'>Belum ada opname</div>";
+    });
+    if($("#sa_it"))$("#sa_it").onchange=async()=>{
+    const id=+$("#sa_it").value;
+    if(!id)return;
+    const items=await api("/api/items");
+    const item=items.find(x=>x.id===id);
+    if($("#sa_sys"))$("#sa_sys").value=item?.stock_qty||0;
+    if($("#sa_selisih"))$("#sa_selisih").value=(+($("#sa_fisik")?$("#sa_fisik").value:0))-($("#sa_sys")?+$("#sa_sys").value:0);
+    };
+    if($("#sa_fisik"))$("#sa_fisik").oninput=()=>{
+    if($("#sa_selisih"))$("#sa_selisih").value=(+($("#sa_fisik").value||0))-($("#sa_sys")?+$("#sa_sys").value:0);
+    };
+   }
+   if(stab==='adj'){
+    h+=`<div class="grid" style="grid-template-columns:1fr 1fr;gap:24px">
+    <div class="card"><h3><span class="card-icon">📝</span>Adjustment Manual</h3>
+    <div class="grid grid-2">
+    <div class="field"><label>Tanggal</label><input id="adj_d" type="date"></div>
+    <div class="field"><label>Gudang</label><select id="adj_wh"><option value="">Pilih...</option>${WH.map(x=>`<option value="${x.id}">${esc(x.warehouse_name)}</option>`).join("")}</select></div>
+    </div>
+    <div class="field"><label>Jenis</label><select id="adj_kind"><option value="IN">Stok Masuk (+)</option><option value="OUT">Stok Keluar (-)</option></select></div>
+    <div class="field"><label>Catatan</label><input id="adj_note" placeholder="Catatan adjustment"></div>
+    <div class="card" style="background:#fef3c7;border:1px solid #f59e0b33">
+    <div style="display:flex;align-items:center;gap:12px">
+    <div class="field" style="flex:2"><label>Barang</label><select id="adj_it"><option value="">Pilih...</option>${ITEMS.map(x=>`<option value="${x.id}">${esc(x.item_name)} [${esc(x.item_code)}]</option>`).join("")}</select></div>
+    <div class="field" style="flex:1"><label>Qty</label><input id="adj_q" type="number" min="1" value="1"></div>
+    <button class="go danger" style="margin-top:20px" onclick="addAdjLine()">+ Tambah</button>
+    </div>
+    </div>
+    <button class="go" onclick="saveAdj()" style="width:100%">Simpan Adjustment</button>
+    </div>
+    <div class="card"><h3>Riwayat Adjustment</h3><div id="adj_list">Memuat...</div></div></div>`;
+    adjLines=[];
+    api("/api/stock-adjustments").then(adj=>{
+    if($("#adj_list"))$("#adj_list").innerHTML=adj.filter(x=>x.type!=="OPNAME").slice(-10).reverse().map(x=>`<div style="padding:8px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
+    <div><b>${esc(x.adjustment_number||"ADJ-"+x.id)}</b> - ${x.transaction_date} - ${esc(x.note||"-")}</div>
+    <button class="go" onclick="viewSA(${x.id})">Lihat</button></div>`).join("")||"<div class='empty-state'>Belum ada adjustment</div>";
+    });
+   }
+   A.innerHTML=h;
+   if(stab==="default"){
+   api("/api/reorder").then(r=>{$("#reorder").innerHTML=`<table><tr><th>Barang</th><th>Stok</th><th>Laku/bln</th><th>Tahan</th><th>Saran Order</th><th>Status</th></tr>${r.map(x=>`<tr><td>${x.item_code}</td><td>${x.stock}</td><td>${x.rata_hari}/hr</td><td>${x.tahan_hari} hr</td><td>${x.saran_order}</td><td>${x.status}</td></tr>`).join("")}</table>`;}).catch(e=>{$("#reorder").textContent=e.message;});
+   }
+  }
  if(cur==="Aset Tetap"){
   const a=await api("/api/assets");
   A.innerHTML=`<div class="card"><h3>Aset Tetap + Penyusutan otomatis</h3>
@@ -1144,6 +1216,66 @@ window.exportInvoicePDF=async id=>{
   win.print();
  }catch(e){alert("Gagal cetak: "+e.message);}
 };
+window.batchPrintInvoices=async()=>{
+ try{
+  const sales=await api("/api/sales");
+  const open=sales.filter(x=>x.status==='OPEN'||x.status==='PARTIAL');
+  if(!open.length)return alert("Tidak ada faktur yang bisa dicetak");
+  
+  const selected=prompt("Faktur yang akan dicetak (pisah koma, atau 'all' untuk semua):\n"+
+   open.map((x,i)=>`${i+1}. ${x.invoice_number} - ${x.customer_name} - Rp${x.total_amount}`).join("\n"));
+  if(!selected||selected.trim()==="")return;
+  
+  let invoices;
+  if(selected.toLowerCase()==="all"){
+   invoices=open;
+  }else{
+   const indices=selected.split(",").map(x=>parseInt(x.trim())-1);
+   invoices=indices.filter(i=>i>=0&&i<open.length).map(i=>open[i]);
+  }
+  if(!invoices.length)return alert("Tidak ada faktur dipilih");
+  
+  let html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Batch Print - ERP-MSP</title>
+  <style>
+   @page{size:A4;margin:15mm}
+   body{font-family:Arial,sans-serif;margin:0;padding:0;font-size:11px}
+   .page{page-break-after:always;padding:15mm;min-height:250mm}
+   .page:last-child{page-break-after:avoid}
+   .header{display:flex;justify-content:space-between;border-bottom:3px solid #1a1a2e;padding-bottom:10px;margin-bottom:15px}
+   .title{font-size:20px;font-weight:bold;color:#1a1a2e}
+   table{width:100%;border-collapse:collapse;margin:8px 0}
+   th,td{padding:6px;border:1px solid #ddd;text-align:left;font-size:10px}
+   th{background:#f5f5f5;font-weight:bold}
+   .total{text-align:right;font-size:12px;margin-top:15px}
+   .footer{margin-top:30px;border-top:1px solid #ccc;padding-top:8px;font-size:9px;color:#666}
+  </style></head><body>`;
+  
+  for(const inv of invoices){
+   html+=`<div class="page">
+   <div class="header">
+    <div><div class="title">ERP-MSP</div><div>Sistem Akuntansi Modern</div></div>
+    <div style="text-align:right"><div style="font-size:16px;font-weight:bold">FAKTUR PENJUALAN</div>
+    <div>${esc(inv.invoice_number)}</div><div>${inv.transaction_date}</div></div>
+   </div>
+   <div style="margin-bottom:15px"><b>Kepada:</b> ${esc(inv.customer_name)}</div>
+   <table><thead><tr><th>Barang</th><th>Qty</th><th>Harga</th><th>Total</th></tr></thead>
+   <tbody>${(inv.lines||[]).map(l=>`<tr><td>${esc(l.item_name||l.description||"")}</td><td>${l.unit_qty||l.quantity}</td><td>Rp${l.unit_price.toLocaleString("id-ID")}</td><td>Rp${l.line_total.toLocaleString("id-ID")}</td></tr>`).join("")}</tbody></table>
+   <div class="total">
+    <p>Subtotal: Rp${(inv.subtotal||0).toLocaleString("id-ID")}</p>
+    <p>PPN: Rp${(inv.tax_amount||0).toLocaleString("id-ID")}</p>
+    <p><b>TOTAL: Rp${inv.total_amount.toLocaleString("id-ID")}</b></p>
+   </div>
+   <div class="footer">Dicetak batch: ${new Date().toLocaleString("id-ID")} | ERP-MSP</div>
+   </div>`;
+  }
+  
+  html+=`</body></html>`;
+  const win=window.open('','_blank');
+  win.document.write(html);
+  win.document.close();
+  setTimeout(()=>win.print(),500);
+ }catch(e){alert("Gagal batch print: "+e.message);}
+};
 window.csv=(name,rows)=>{const q2=v=>`"${String(v??"").replace(/"/g,'""')}"`;
  const blob=new Blob([rows.map(r=>r.map(q2).join(",")).join("\n")],{type:"text/csv"});
  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();};
@@ -1362,6 +1494,45 @@ window.createDNFromInvoice=async(invId)=>{
 };
 window.opname=async()=>{try{const r=await api("/api/stock/opname",{method:"POST",body:JSON.stringify({item_id:+$("#o_item").value,warehouse_id:+$("#o_wh").value,actual_qty:+$("#o_qty").value,date:$("#o_date").value})});alert("Selisih "+r.diff+" ("+fmt(r.value)+")");loadM().then(render);}catch(e){alert(e.message)}};
 window.transfer=async()=>{try{await api("/api/stock/transfer",{method:"POST",body:JSON.stringify({item_id:+$("#t_item").value,from_warehouse:+$("#t_from").value,to_warehouse:+$("#t_to").value,qty:+$("#t_qty").value,date:$("#t_date").value})});alert("Stok dipindahkan");loadM().then(render);}catch(e){alert(e.message)}};
+let saLines=[];
+function addSALine(){
+ const item_id=+$("#sa_it").value;
+ const system_qty=+$("#sa_sys").value;
+ const fisik_qty=+$("#sa_fisik").value;
+ if(!item_id)return alert("Pilih barang!");
+ const diff=fisik_qty-system_qty;
+ saLines.push({item_id,system_qty,fisik_qty,difference:diff});
+ alert("Ditambahkan: "+(ITEMS.find(x=>x.id===item_id)?.item_name||"")+" selisih "+diff);
+ $("#sa_it").value="";$("#sa_sys").value=0;$("#sa_fisik").value=0;$("#sa_selisih").value=0;
+}
+window.saveSA=async()=>{
+ try{showLoading("#app button.go","Menyimpan...");
+ await api("/api/stock-adjustments",{method:"POST",body:JSON.stringify({type:"OPNAME",warehouse_id:+$("#sa_wh").value,date:$("#sa_d").value,note:$("#sa_note").value,lines:saLines})});
+ alert("Stok Opname tersimpan");saLines=[];render();}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}
+};
+window.viewSA=async(id)=>{
+ try{
+  const adj=(await api("/api/stock-adjustments")).find(x=>x.id===id);
+  if(!adj)return alert("Data tidak ditemukan");
+  const lines=adj.lines||[];
+  alert("ADJ #"+adj.id+"\nTanggal: "+adj.transaction_date+"\nCatatan: "+(adj.note||"-")+"\n\n"+lines.map(l=>`${l.item_name||"Item #"+l.item_id}: ${l.system_qty} → ${l.fisik_qty} (${l.difference>0?"+":""}${l.difference})`).join("\n"));
+ }catch(e){alert(e.message);}
+};
+let adjLines=[];
+function addAdjLine(){
+ const item_id=+$("#adj_it").value;
+ const qty=+$("#adj_q").value;
+ if(!item_id)return alert("Pilih barang!");
+ adjLines.push({item_id,quantity:qty});
+ alert("Ditambahkan: "+(ITEMS.find(x=>x.id===item_id)?.item_name||"")+" qty "+qty);
+ $("#adj_it").value="";$("#adj_q").value=1;
+}
+window.saveAdj=async()=>{
+ try{showLoading("#app button.go","Menyimpan...");
+ const kind=$("#adj_kind").value;
+ await api("/api/stock-adjustments",{method:"POST",body:JSON.stringify({type:kind,warehouse_id:+$("#adj_wh").value,date:$("#adj_d").value,note:$("#adj_note").value,lines:adjLines.map(l=>({...l,quantity:kind==="OUT"?-l.quantity:l.quantity}))})});
+ alert("Adjustment tersimpan");adjLines=[];render();}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}
+};
 window.saveJ=async()=>{
  try{showLoading("#app button.go","Posting...");
  await api("/api/journals",{method:"POST",body:JSON.stringify({transaction_date:$("#j_d").value,description:$("#j_desc").value,lines:_jl})});
