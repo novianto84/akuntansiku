@@ -630,8 +630,11 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
    h+=`<div class="row" style="margin:16px 0"><button class="go" onclick="batchPrintInvoices()">🖨️ Batch Print Faktur</button></div>`;
    if(sub==="quotation"){
    h+=`<div class="card"><h3>Penawaran Penjualan (non-posting)</h3>
-   <div class="row">Customer <select id="q_cust">${CUST.map(c=>`<option value="${c.id}">${c.customer_name}</option>`).join("")}</select>
-   Tgl <input type="date" id="q_date" value="${today()}"> PPN% <input id="q_tax" value="11" style="width:60px"></div>
+   <div class="grid grid-3">
+   <div class="field required"><label>Customer</label><select id="q_cust">${CUST.map(c=>`<option value="${c.id}">${c.customer_name}</option>`).join("")}</select></div>
+   <div class="field required"><label>Tanggal</label><input type="date" id="q_date" value="${today()}"></div>
+   <div class="field"><label>PPN%</label><input id="q_tax" value="11" style="width:60px"></div>
+   </div>
    <div class="row">Barang <select id="q_item" onchange="unitCh('q')">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
    Satuan <select id="q_unit"></select> Qty <input id="q_qty" value="1" style="width:60px"> Harga <input id="q_price" value="100000" style="width:120px">
    Deskripsi <input id="q_desc" value="" style="width:160px">
@@ -642,10 +645,13 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
   }
   if(sub==="order"){
    h+=`<div class="card"><h3>Pesanan Penjualan / SO (non-posting, mengikat stok)</h3>
-   <div class="row">Customer <select id="o_cust">${CUST.map(c=>`<option value="${c.id}">${c.customer_name}</option>`).join("")}</select>
-   Tgl <input type="date" id="o_date" value="${today()}"> PPN% <input id="o_tax" value="11" style="width:60px">
-   Dari penawaran <select id="o_sq"><option value="">- manual -</option>${sq.filter(x=>x.status==="OPEN").map(x=>`<option value="${x.id}">${x.quotation_number}</option>`).join("")}</select>
+   <div class="grid grid-3">
+   <div class="field required"><label>Customer</label><select id="o_cust">${CUST.map(c=>`<option value="${c.id}">${c.customer_name}</option>`).join("")}</select></div>
+   <div class="field required"><label>Tanggal</label><input type="date" id="o_date" value="${today()}"></div>
+   <div class="field"><label>PPN%</label><input id="o_tax" value="11" style="width:60px"></div>
+   <div class="field"><label>Dari penawaran</label><select id="o_sq"><option value="">- manual -</option>${sq.filter(x=>x.status==="OPEN").map(x=>`<option value="${x.id}">${x.quotation_number}</option>`).join("")}</select>
    <button class="go" onclick="copySQ()">Salin</button></div>
+   </div>
    <div id="oo_wrap"></div>
    <button class="go" onclick="saveO()">Simpan SO</button></div>
    <div class="card"><h3>Riwayat SO</h3>${so.map(x=>`<details><summary class="clickable-row" onclick="goDetail('sales-order',${x.id})" style="cursor:pointer"><b>${x.order_number}</b> ${x.transaction_date} ${x.customer_name} ${fmt(x.total_amount)} ${st(x.status)}</summary>
@@ -655,9 +661,11 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
   if(sub==="delivery"){
    const openSO=so.filter(x=>x.status!=="CLOSED");
    h+=`<div class="card"><h3>Surat Jalan / Delivery (stok keluar → Brg Dalam Perjalanan)</h3>
-   <div class="row">Customer <select id="d_cust">${CUST.map(c=>`<option value="${c.id}">${c.customer_name}</option>`).join("")}</select>
-   Tgl <input type="date" id="d_date" value="${today()}">
-   Dari SO <select id="d_so" onchange="doLines()"><option value="">- langsung -</option>${openSO.map(x=>`<option value="${x.id}">${x.order_number} (${x.customer_name})</option>`).join("")}</select></div>
+   <div class="grid grid-2">
+   <div class="field required"><label>Customer</label><select id="d_cust">${CUST.map(c=>`<option value="${c.id}">${c.customer_name}</option>`).join("")}</select></div>
+   <div class="field required"><label>Tanggal</label><input type="date" id="d_date" value="${today()}"></div>
+   <div class="field"><label>Dari SO</label><select id="d_so" onchange="doLines()"><option value="">- langsung -</option>${openSO.map(x=>`<option value="${x.id}">${x.order_number} (${x.customer_name})</option>`).join("")}</select></div>
+   </div>
    <div id="dref"></div>
    <div class="row">Barang <select id="d_item" onchange="unitCh('d')">${ITEMS.filter(i=>i.item_type==="INVENTORY").map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
    Gudang <select id="d_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select>
@@ -667,11 +675,14 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
    <div class="card"><h3>Riwayat Surat Jalan</h3>${dn.map(x=>`<details><summary><b>${x.delivery_number}</b> ${x.transaction_date} ${x.customer_name} ${st(x.status)}</summary><table><tr><th>Barang</th><th>Deskripsi</th><th>Qty</th><th>Tertagih</th></tr>${x.lines.map(l=>`<tr><td>${l.item_name}</td><td>${l.description||""}</td><td>${l.quantity}</td><td>${l.invoiced_qty}</td></tr>`).join("")}</table>${x.status==="POSTED"?`<button class="go danger" onclick="voidD(${x.id})">Void</button>`:""}</details>`).join("")}</div>`;
   }
   if(sub==="invoice"){
-  h+=`<div class="card"><h3>Buat Faktur Penjualan (auto-jurnal + auto-HPP FIFO/Average)</h3>
-  <div class="row">Customer <select id="s_cust">${CUST.map(c=>`<option value="${c.id}">${esc(c.customer_name)}</option>`).join("")}</select>
-  <button class="go" onclick="quickCust()">+ Baru</button>
-  Gudang <select id="s_wh">${WH.map(w=>`<option value="${w.id}">${esc(w.warehouse_name)}</option>`).join("")}</select>
-  Tgl <input type="date" id="s_date" value="${today()}"> PPN ${taxSel("s_tax",11)}</div>
+   h+=`<div class="card"><h3>Buat Faktur Penjualan (auto-jurnal + auto-HPP FIFO/Average)</h3>
+   <div class="grid grid-2">
+   <div class="field required"><label>Customer</label><div class="row"><select id="s_cust">${CUST.map(c=>`<option value="${c.id}">${esc(c.customer_name)}</option>`).join("")}</select>
+   <button class="go" onclick="quickCust()">+ Baru</button></div></div>
+   <div class="field"><label>Gudang</label><select id="s_wh">${WH.map(w=>`<option value="${w.id}">${esc(w.warehouse_name)}</option>`).join("")}</select></div>
+   <div class="field required"><label>Tanggal</label><input type="date" id="s_date" value="${today()}"></div>
+   <div class="field"><label>PPN</label>${taxSel("s_tax",11)}</div>
+   </div>
   <div class="row">Salesman <select id="s_sp"><option value="">- tanpa salesman -</option>${SP.map(s=>`<option value="${s.id}">${s.sp_name} (${s.commission_pct}%)</option>`).join("")}</select>
   <span class="mut">komisi otomatis: Dr Beban Komisi / Cr Utang Komisi</span></div>
   <div class="row">Dari DO <select id="s_do" onchange="siDO()"><option value="">-</option>${dn.filter(x=>x.status==="POSTED").map(x=>`<option value="${x.id}">${x.delivery_number}</option>`).join("")}</select>
@@ -688,21 +699,24 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
    ${inv.map(x=>`<tr class="clickable-row" onclick="goDetail('sales-invoice',${x.id})"><td><b>${x.invoice_number}</b></td><td>${x.transaction_date}</td><td>${x.customer_name}</td><td>${x.salesperson||"-"}</td><td>${fmt(x.total_amount)}</td><td>${fmt(x.commission_amount||0)}</td><td>${fmt(x.tradein_total||0)}</td><td>${fmt(x.outstanding)}</td><td>${st(x.status)}</td><td>${x.status!=="VOID"?`<button class="go danger" onclick="voidSale(${x.id})">Void</button>`:""} <button class="go" onclick="printInv(${x.id})">Cetak</button></td></tr>`).join("")}</table></div>`;
   }
   if(sub==="return"){
-  h+=`<div class="card"><h3>Retur Penjualan (parsial, stok kembali + jurnal)</h3>
-  <div class="row">Invoice <select id="rs_inv">${inv.filter(x=>x.status!=="VOID").map(x=>`<option value="${x.id}">${x.invoice_number} (sisa ${fmt(x.outstanding)})</option>`).join("")}</select>
-  Barang <select id="rs_item">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
-  Gudang <select id="rs_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select>
-  Qty <input id="rs_qty" value="1" style="width:60px"> Tgl <input type="date" id="rs_date" value="${today()}">
-  <button class="go" onclick="saveRS()">Catat Retur</button></div>
+   h+=`<div class="card"><h3>Retur Penjualan (parsial, stok kembali + jurnal)</h3>
+   <div class="grid grid-3">
+   <div class="field required"><label>Invoice</label><select id="rs_inv">${inv.filter(x=>x.status!=="VOID").map(x=>`<option value="${x.id}">${x.invoice_number} (sisa ${fmt(x.outstanding)})</option>`).join("")}</select></div>
+   <div class="field required"><label>Barang</label><select id="rs_item">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select></div>
+   <div class="field"><label>Gudang</label><select id="rs_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></div>
+   <div class="field"><label>Qty</label><input id="rs_qty" value="1" style="width:60px"></div>
+   <div class="field required"><label>Tanggal</label><input type="date" id="rs_date" value="${today()}"></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="saveRS()">Catat Retur</button></div>
    <table><tr><th>No Retur</th><th>Invoice</th><th>Tgl</th><th>Total</th></tr>${rets.map(r=>`<tr><td>${r.return_number}</td><td>${r.invoice_number}</td><td>${r.transaction_date}</td><td>${fmt(r.total_amount)}</td></tr>`).join("")}</table></div>`;
   }
   if(sub==="cn"){
    h+=`<div class="grid" style="grid-template-columns:1fr 1fr;gap:24px">
    <div class="card"><h3><span class="card-icon">📝</span>Form Credit Note</h3>
-    <div class="grid grid-2">
-     <div class="field"><label>Tanggal</label><input id="cn_d" type="date"></div>
-     <div class="field"><label>Pelanggan</label><select id="cn_cust"><option value="">Pilih...</option>${CUST.map(x=>`<option value="${x.id}">${esc(x.customer_name)}</option>`).join("")}</select></div>
-    </div>
+     <div class="grid grid-2">
+      <div class="field required"><label>Tanggal</label><input id="cn_d" type="date"></div>
+      <div class="field required"><label>Pelanggan</label><select id="cn_cust"><option value="">Pilih...</option>${CUST.map(x=>`<option value="${x.id}">${esc(x.customer_name)}</option>`).join("")}</select></div>
+     </div>
     <div class="field"><label>Alasan / Deskripsi</label><input id="cn_desc" placeholder="Deskripsi credit note"></div>
     <div class="card" style="background:#004d400f;border:1px solid #004d4033">
      <div style="display:flex;align-items:center;gap:12px">
@@ -721,10 +735,10 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
   if(sub==="dn"){
    h+=`<div class="grid" style="grid-template-columns:1fr 1fr;gap:24px">
    <div class="card"><h3><span class="card-icon">📝</span>Form Debit Note</h3>
-    <div class="grid grid-2">
-     <div class="field"><label>Tanggal</label><input id="dn_d" type="date"></div>
-     <div class="field"><label>Vendor</label><select id="dn_ven"><option value="">Pilih...</option>${VEND.map(x=>`<option value="${x.id}">${esc(x.vendor_name)}</option>`).join("")}</select></div>
-    </div>
+     <div class="grid grid-2">
+      <div class="field required"><label>Tanggal</label><input id="dn_d" type="date"></div>
+      <div class="field required"><label>Vendor</label><select id="dn_ven"><option value="">Pilih...</option>${VEND.map(x=>`<option value="${x.id}">${esc(x.vendor_name)}</option>`).join("")}</select></div>
+     </div>
     <div class="field"><label>Alasan / Deskripsi</label><input id="dn_desc" placeholder="Deskripsi debit note"></div>
     <div class="card" style="background:#7f1d1d0f;border:1px solid #7f1d1d33">
      <div style="display:flex;align-items:center;gap:12px">
@@ -755,8 +769,11 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
   let h=`<div class="row">${[["req","Permintaan"],["order","Pesanan (PO)"],["receive","Penerimaan"],["invoice","Faktur"],["return","Retur"]].map(t=>`<button class="go"${sub===t[0]?"":' style="opacity:.55"'} onclick="_bsub='${t[0]}';render()">${t[1]}</button>`).join("")}</div>`;
   if(sub==="req"){
    h+=`<div class="card"><h3>Permintaan Pembelian / PR (non-posting)</h3>
-   <div class="row">Vendor (opsional) <select id="r_vend"><option value="">- internal -</option>${VEND.map(c=>`<option value="${c.id}">${c.vendor_name}</option>`).join("")}</select>
-   Tgl <input type="date" id="r_date" value="${today()}"> Peminta <input id="r_req" value=""></div>
+   <div class="grid grid-3">
+   <div class="field"><label>Vendor (opsional)</label><select id="r_vend"><option value="">- internal -</option>${VEND.map(c=>`<option value="${c.id}">${c.vendor_name}</option>`).join("")}</select></div>
+   <div class="field required"><label>Tanggal</label><input type="date" id="r_date" value="${today()}"></div>
+   <div class="field"><label>Peminta</label><input id="r_req" value=""></div>
+   </div>
    <div class="row">Barang <select id="r_item">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
    Qty <input id="r_qty" value="10" style="width:60px"> Estimasi harga <input id="r_price" value="50000" style="width:120px"> Deskripsi <input id="r_desc" value="" style="width:140px">
    <button class="go" onclick="addR()">+ baris</button></div><div id="rlines"></div>
@@ -766,10 +783,13 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
   }
   if(sub==="order"){
    h+=`<div class="card"><h3>Pesanan Pembelian / PO (non-posting)</h3>
-   <div class="row">Vendor <select id="o_vend">${VEND.map(c=>`<option value="${c.id}">${c.vendor_name}</option>`).join("")}</select>
-   Tgl <input type="date" id="o_date" value="${today()}"> PPN% <input id="o_tax" value="11" style="width:60px">
-   Dari PR <select id="o_pr"><option value="">- manual -</option>${pr.filter(x=>x.status==="OPEN").map(x=>`<option value="${x.id}">${x.requisition_number}</option>`).join("")}</select>
+   <div class="grid grid-3">
+   <div class="field required"><label>Vendor</label><select id="o_vend">${VEND.map(c=>`<option value="${c.id}">${c.vendor_name}</option>`).join("")}</select></div>
+   <div class="field required"><label>Tanggal</label><input type="date" id="o_date" value="${today()}"></div>
+   <div class="field"><label>PPN%</label><input id="o_tax" value="11" style="width:60px"></div>
+   <div class="field"><label>Dari PR</label><select id="o_pr"><option value="">- manual -</option>${pr.filter(x=>x.status==="OPEN").map(x=>`<option value="${x.id}">${x.requisition_number}</option>`).join("")}</select>
    <button class="go" onclick="copyPR()">Salin</button></div>
+   </div>
    <div id="og_wrap"></div>
    <button class="go" onclick="saveO2()">Simpan PO</button></div>
    <div class="card"><h3>Riwayat PO</h3>${po.map(x=>`<details><summary class="clickable-row" onclick="goDetail('purchase-order',${x.id})" style="cursor:pointer"><b>${x.order_number}</b> ${x.transaction_date} ${x.vendor_name} ${fmt(x.total_amount)} ${st(x.status)}</summary>
@@ -779,9 +799,11 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
   if(sub==="receive"){
    const openPO=po.filter(x=>x.status!=="CLOSED");
    h+=`<div class="card"><h3>Penerimaan Barang (stok masuk + utang akrual)</h3>
-   <div class="row">Vendor <select id="v_vend">${VEND.map(c=>`<option value="${c.id}">${c.vendor_name}</option>`).join("")}</select>
-   Tgl <input type="date" id="v_date" value="${today()}">
-   Dari PO <select id="v_po" onchange="riLines()"><option value="">- langsung -</option>${openPO.map(x=>`<option value="${x.id}">${x.order_number} (${x.vendor_name})</option>`).join("")}</select></div>
+   <div class="grid grid-2">
+   <div class="field required"><label>Vendor</label><select id="v_vend">${VEND.map(c=>`<option value="${c.id}">${c.vendor_name}</option>`).join("")}</select></div>
+   <div class="field required"><label>Tanggal</label><input type="date" id="v_date" value="${today()}"></div>
+   <div class="field"><label>Dari PO</label><select id="v_po" onchange="riLines()"><option value="">- langsung -</option>${openPO.map(x=>`<option value="${x.id}">${x.order_number} (${x.vendor_name})</option>`).join("")}</select></div>
+   </div>
    <div id="vref"></div>
    <div class="row">Barang <select id="v_item" onchange="unitCh('v')">${ITEMS.filter(i=>i.item_type==="INVENTORY").map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
    Gudang <select id="v_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select>
@@ -792,11 +814,14 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
    ${ri.map(x=>`<tr><td>${x.receive_number}</td><td>${x.transaction_date}</td><td>${x.vendor_name}</td><td>${fmt(x.subtotal)}</td><td>${st(x.status)}</td><td>${x.status==="POSTED"?`<button class="go danger" onclick="voidR(${x.id})">Void</button>`:""}</td></tr>`).join("")}</table></div>`;
   }
   if(sub==="invoice"){
-  h+=`<div class="card"><h3>Buat Faktur Pembelian (Dr Persediaan + PPN / Cr Utang)</h3>
-  <div class="row">Vendor <select id="p_vend">${VEND.map(c=>`<option value="${c.id}">${esc(c.vendor_name)}</option>`).join("")}</select>
-  <button class="go" onclick="quickVend()">+ Baru</button>
-  Gudang <select id="p_wh">${WH.map(w=>`<option value="${w.id}">${esc(w.warehouse_name)}</option>`).join("")}</select>
-  Tgl <input type="date" id="p_date" value="${today()}"> PPN ${taxSel("p_tax",11)}</div>
+   h+=`<div class="card"><h3>Buat Faktur Pembelian (Dr Persediaan + PPN / Cr Utang)</h3>
+   <div class="grid grid-2">
+   <div class="field required"><label>Vendor</label><div class="row"><select id="p_vend">${VEND.map(c=>`<option value="${c.id}">${esc(c.vendor_name)}</option>`).join("")}</select>
+   <button class="go" onclick="quickVend()">+ Baru</button></div></div>
+   <div class="field"><label>Gudang</label><select id="p_wh">${WH.map(w=>`<option value="${w.id}">${esc(w.warehouse_name)}</option>`).join("")}</select></div>
+   <div class="field required"><label>Tanggal</label><input type="date" id="p_date" value="${today()}"></div>
+   <div class="field"><label>PPN</label>${taxSel("p_tax",11)}</div>
+   </div>
   <div class="row">Dari Receive <select id="p_ri" onchange="piRI()"><option value="">-</option>${ri.filter(x=>x.status==="POSTED").map(x=>`<option value="${x.id}">${x.receive_number}</option>`).join("")}</select>
   Dari PO <select id="p_po" onchange="piPO()"><option value="">-</option>${po.filter(x=>x.status!=="CLOSED").map(x=>`<option value="${x.id}">${x.order_number}</option>`).join("")}</select></div>
   <div id="pref"></div>
@@ -806,12 +831,15 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
    ${inv.map(x=>`<tr class="clickable-row" onclick="goDetail('purchase-invoice',${x.id})"><td><b>${x.invoice_number}</b></td><td>${x.transaction_date}</td><td>${x.vendor_name}</td><td>${fmt(x.total_amount)}</td><td>${fmt(x.paid)}</td><td>${fmt(x.returned||0)}</td><td>${fmt(x.outstanding)}</td><td>${st(x.status)}</td><td>${x.status!=="VOID"?`<button class="go danger" onclick="voidBuy(${x.id})">Void</button>`:""}</td></tr>`).join("")}</table></div>`;
   }
   if(sub==="return"){
-  h+=`<div class="card"><h3>Retur Pembelian (parsial, stok keluar + jurnal)</h3>
-  <div class="row">Tagihan <select id="rp_inv">${inv.filter(x=>x.status!=="VOID").map(x=>`<option value="${x.id}">${x.invoice_number} (sisa ${fmt(x.outstanding)})</option>`).join("")}</select>
-  Barang <select id="rp_item">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
-  Gudang <select id="rp_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select>
-  Qty <input id="rp_qty" value="1" style="width:60px"> Tgl <input type="date" id="rp_date" value="${today()}">
-  <button class="go" onclick="saveRP()">Catat Retur</button></div>
+   h+=`<div class="card"><h3>Retur Pembelian (parsial, stok keluar + jurnal)</h3>
+   <div class="grid grid-3">
+   <div class="field required"><label>Tagihan</label><select id="rp_inv">${inv.filter(x=>x.status!=="VOID").map(x=>`<option value="${x.id}">${x.invoice_number} (sisa ${fmt(x.outstanding)})</option>`).join("")}</select></div>
+   <div class="field required"><label>Barang</label><select id="rp_item">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select></div>
+   <div class="field"><label>Gudang</label><select id="rp_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></div>
+   <div class="field"><label>Qty</label><input id="rp_qty" value="1" style="width:60px"></div>
+   <div class="field required"><label>Tanggal</label><input type="date" id="rp_date" value="${today()}"></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="saveRP()">Catat Retur</button></div>
   <table><tr><th>No Retur</th><th>Tagihan</th><th>Tgl</th><th>Total</th></tr>${rets.map(r=>`<tr><td>${r.return_number}</td><td>${r.invoice_number}</td><td>${r.transaction_date}</td><td>${fmt(r.total_amount)}</td></tr>`).join("")}</table></div>`;
   }
   A.innerHTML=h;
@@ -822,54 +850,101 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
  }
  if(cur==="Kas & Bank"){
   const p=await api("/api/payments");window._ag=await api("/api/aging?type=AR");window._agAP=await api("/api/aging?type=AP");
-  A.innerHTML=`<div class="card"><h3>Kas & Bank — Pelunasan per Invoice (parsial didukung)</h3>
-  <div class="row"><select id="k_kind" onchange="kindCh()"><option value="AR">Terima dari Customer (Dr Kas / Cr Piutang)</option><option value="AP">Bayar ke Vendor (Dr Utang / Cr Kas)</option></select>
-  Akun Kas ${coaSel("k_cash")}</div>
-  <div class="row">Kontak <select id="k_c"></select> Invoice <select id="k_inv" onchange="invCh()"></select>
-  Nominal <input id="k_alloc" style="width:130px"><button class="go" onclick="addAlloc()">+ Alokasi</button></div>
-  <div id="alocs"></div>
-   <div class="row">Tgl <input type="date" id="k_date" value="${today()}"> Catatan <input id="k_note" value=""> Kurs <input id="k_rate" type="number" min="1" value="1" step="0.01" style="width:100px">
+   A.innerHTML=`<div class="card"><h3>Kas & Bank — Pelunasan per Invoice (parsial didukung)</h3>
+   <div class="grid grid-2">
+   <div class="field required"><label>Jenis</label><select id="k_kind" onchange="kindCh()"><option value="AR">Terima dari Customer (Dr Kas / Cr Piutang)</option><option value="AP">Bayar ke Vendor (Dr Utang / Cr Kas)</option></select></div>
+   <div class="field required"><label>Akun Kas</label>${coaSel("k_cash")}</div>
+   <div class="field required"><label>Kontak</label><select id="k_c"></select></div>
+   <div class="field"><label>Invoice</label><select id="k_inv" onchange="invCh()"></select></div>
+   <div class="field required"><label>Nominal</label><div class="row"><input id="k_alloc" style="width:130px"><button class="go" onclick="addAlloc()">+ Alokasi</button></div></div>
+   </div>
+   <div id="alocs"></div>
+   <div class="grid grid-2">
+   <div class="field required"><label>Tanggal</label><input type="date" id="k_date" value="${today()}"></div>
+   <div class="field"><label>Catatan</label><input id="k_note" value=""></div>
+   <div class="field"><label>Kurs</label><input id="k_rate" type="number" min="1" value="1" step="0.01" style="width:100px"></div>
+   </div>
+   <div class="row" style="margin-top:12px">
    <button class="go" onclick="savePay()">Catat Pembayaran</button></div>
   <p class="mut">Tips rekonsiliasi: bandingkan saldo akun 11001/11002 di Trial Balance dengan mutasi di bawah. Selisih = belum rekonsil.</p></div>
-  <div class="card"><h3>Transfer Antar Kas / Bank</h3>
-  <div class="row">Dari ${coaSel("t_from")} Ke ${coaSel("t_to")} Nominal <input id="t_amt" value="500000">
-  Tgl <input type="date" id="t_date" value="${today()}"> Ket <input id="t_note" value="Transfer dana">
-  <button class="go" onclick="saveT()">Transfer</button></div></div>
-  <div class="card"><h3>Rekonsiliasi Bank (koran vs sistem)</h3>
-  <div class="row">Rekening ${bankSel("rc_acc")} <button class="go" onclick="loadRecon()">Tampilkan</button>
-  <button class="go" onclick="autoRecon()">Auto-Match</button></div>
-  <div class="row">Tgl <input type="date" id="rc_d" value="${today()}"> Ket <input id="rc_desc" value="Mutasi koran">
-  Nominal <input id="rc_amt" value="1000000" style="width:130px">
-  <select id="rc_dir"><option value="IN">Masuk (IN)</option><option value="OUT">Keluar (OUT)</option></select>
-  <button class="go" onclick="saveStmt()">+ Mutasi Koran</button></div>
-  <div id="recon"></div></div>
-  <div class="card"><h3>Uang Muka (DP) — terima/bayar lalu alokasikan</h3>
-  <div class="row"><select id="dp_kind" onchange="dpKind()"><option value="AR">Terima DP Customer (Dr Kas / Cr UMP)</option><option value="AP">Bayar DP Vendor (Dr UMB / Cr Kas)</option></select>
-  Kontak <select id="dp_c"></select> Kas ${coaSel("dp_cash")} Nominal <input id="dp_amt" value="1000000" style="width:130px">
-  Tgl <input type="date" id="dp_date" value="${today()}"><button class="go" onclick="saveDP()">Catat DP</button></div>
-  <div class="row">DP <select id="dpa_dp"></select> ke Invoice <select id="dpa_inv"></select>
-  Nominal <input id="dpa_amt" style="width:130px"><button class="go" onclick="allocDP()">Alokasikan</button></div>
-  <div id="dp_list" class="mut">Memuat…</div></div>
-  <div class="card"><h3>Giro — terima/keluar, cairkan/tolak</h3>
-  <div class="row"><select id="g_kind" onchange="giroKind()"><option value="AR">Terima giro Customer</option><option value="AP">Giro ke Vendor</option></select>
-  Kontak <select id="g_c"></select> No giro <input id="g_no" value="" style="width:110px"> Bank <input id="g_bank" value="" style="width:110px">
-  Tgl <input type="date" id="g_issue" value="${today()}"> Jth tempo <input type="date" id="g_due" value="${today()}"></div>
-  <div class="row">Invoice <select id="g_inv"></select> Nominal <input id="g_amt" style="width:130px">
-  <button class="go" onclick="addGiroAlloc()">+ Alokasi</button></div><div id="galocs"></div>
-  <button class="go" onclick="saveGiro()">Catat Giro</button>
-  <div id="giro_list">Memuat…</div></div>
+   <div class="card"><h3>Transfer Antar Kas / Bank</h3>
+   <div class="grid grid-2">
+   <div class="field required"><label>Dari</label>${coaSel("t_from")}</div>
+   <div class="field required"><label>Ke</label>${coaSel("t_to")}</div>
+   <div class="field required"><label>Nominal</label><input id="t_amt" value="500000"></div>
+   <div class="field required"><label>Tanggal</label><input type="date" id="t_date" value="${today()}"></div>
+   <div class="field"><label>Catatan</label><input id="t_note" value="Transfer dana"></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="saveT()">Transfer</button></div></div>
+   <div class="card"><h3>Rekonsiliasi Bank (koran vs sistem)</h3>
+   <div class="grid grid-2">
+   <div class="field required"><label>Rekening</label>${bankSel("rc_acc")}</div>
+   </div>
+   <div class="row"><button class="go" onclick="loadRecon()">Tampilkan</button>
+   <button class="go" onclick="autoRecon()">Auto-Match</button></div>
+   <div class="grid grid-3">
+   <div class="field required"><label>Tanggal</label><input type="date" id="rc_d" value="${today()}"></div>
+   <div class="field"><label>Keterangan</label><input id="rc_desc" value="Mutasi koran"></div>
+   <div class="field required"><label>Nominal</label><input id="rc_amt" value="1000000" style="width:130px"></div>
+   <div class="field"><label>Arah</label><select id="rc_dir"><option value="IN">Masuk (IN)</option><option value="OUT">Keluar (OUT)</option></select></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="saveStmt()">+ Mutasi Koran</button></div>
+   <div id="recon"></div></div>
+   <div class="card"><h3>Uang Muka (DP) — terima/bayar lalu alokasikan</h3>
+   <div class="grid grid-2">
+   <div class="field required"><label>Jenis</label><select id="dp_kind" onchange="dpKind()"><option value="AR">Terima DP Customer (Dr Kas / Cr UMP)</option><option value="AP">Bayar DP Vendor (Dr UMB / Cr Kas)</option></select></div>
+   <div class="field required"><label>Kontak</label><select id="dp_c"></select></div>
+   <div class="field required"><label>Kas</label>${coaSel("dp_cash")}</div>
+   <div class="field required"><label>Nominal</label><input id="dp_amt" value="1000000" style="width:130px"></div>
+   <div class="field required"><label>Tanggal</label><input type="date" id="dp_date" value="${today()}"></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="saveDP()">Catat DP</button></div>
+   <div class="grid grid-3" style="margin-top:12px">
+   <div class="field"><label>DP</label><select id="dpa_dp"></select></div>
+   <div class="field"><label>ke Invoice</label><select id="dpa_inv"></select></div>
+   <div class="field"><label>Nominal</label><input id="dpa_amt" style="width:130px"><button class="go" onclick="allocDP()">Alokasikan</button></div>
+   </div>
+   <div id="dp_list" class="mut">Memuat…</div></div>
+   <div class="card"><h3>Giro — terima/keluar, cairkan/tolak</h3>
+   <div class="grid grid-2">
+   <div class="field required"><label>Jenis</label><select id="g_kind" onchange="giroKind()"><option value="AR">Terima giro Customer</option><option value="AP">Giro ke Vendor</option></select></div>
+   <div class="field required"><label>Kontak</label><select id="g_c"></select></div>
+   <div class="field"><label>No giro</label><input id="g_no" value="" style="width:110px"></div>
+   <div class="field"><label>Bank</label><input id="g_bank" value="" style="width:110px"></div>
+   <div class="field required"><label>Tgl terbit</label><input type="date" id="g_issue" value="${today()}"></div>
+   <div class="field required"><label>Jth tempo</label><input type="date" id="g_due" value="${today()}"></div>
+   </div>
+   <div class="grid grid-3" style="margin-top:12px">
+   <div class="field"><label>Invoice</label><select id="g_inv"></select></div>
+   <div class="field"><label>Nominal</label><input id="g_amt" style="width:130px"></div>
+   <div class="field"><label>&nbsp;</label><button class="go" onclick="addGiroAlloc()">+ Alokasi</button></div>
+   </div>
+   <div id="galocs"></div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="saveGiro()">Catat Giro</button></div>
+   <div id="giro_list">Memuat…</div></div>
   <div class="card"><table><tr><th>No</th><th>Tgl</th><th>Jenis</th><th>Nominal</th></tr>${p.map(x=>`<tr><td>${x.payment_number}</td><td>${x.transaction_date}</td><td>${x.kind}</td><td>${fmt(x.amount)}</td></tr>`).join("")}</table></div>`;
   window._al=[];kindCh();window._gal=[];dpInit();giroInit();
  }
  if(cur==="Buku Besar"){
   const j=await api("/api/journals");
-  A.innerHTML=`<div class="card"><h3>Jurnal Umum (wajib seimbang D=K)</h3>
-  <div class="row">Tgl <input type="date" id="j_d" value="${today()}"> Ket <input id="j_desc" value="Jurnal penyesuaian"> Akun ${coaSel("j_a")} D <input id="j_db" value="100000" style="width:100px"> K <input id="j_cr" value="0" style="width:100px">
-  <button class="go" onclick="addJ()">+ baris</button></div><div id="jlines"></div><button class="go" onclick="saveJ()">Posting Jurnal</button></div>
+   A.innerHTML=`<div class="card"><h3>Jurnal Umum (wajib seimbang D=K)</h3>
+   <div class="grid grid-2">
+   <div class="field required"><label>Tanggal</label><input type="date" id="j_d" value="${today()}"></div>
+   <div class="field"><label>Keterangan</label><input id="j_desc" value="Jurnal penyesuaian"></div>
+   </div>
+   <div class="grid grid-3">
+   <div class="field"><label>Akun</label>${coaSel("j_a")}</div>
+   <div class="field"><label>Debit</label><input id="j_db" value="100000" style="width:100px"></div>
+   <div class="field"><label>Kredit</label><input id="j_cr" value="0" style="width:100px"></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="addJ()">+ baris</button></div><div id="jlines"></div><button class="go" onclick="saveJ()">Posting Jurnal</button></div>
    <div class="card"><h3>Histori (${j.length})</h3>${j.slice(0,30).map(x=>`<details><summary class="clickable-row" onclick="goDetail('journal',${x.id})" style="cursor:pointer"><b>${x.journal_number}</b> ${x.transaction_date} — ${x.description} [${x.status}]</summary><table>${x.lines.map(l=>`<tr><td>${l.account_code}</td><td>${l.account_name}</td><td>${fmt(l.debit)}</td><td>${fmt(l.credit)}</td></tr>`).join("")}</table></details>`).join("")}</div>
-  <div class="card"><h3>🔒 Tutup Buku / Kunci Periode (admin)</h3>
-  <div class="row">Tahun <input id="pe_y" value="${new Date().getFullYear()-1}" style="width:80px"><button class="go danger" onclick="closeYear()">Tutup & Kunci</button></div>
-  <div id="locks" class="mut">Memuat…</div></div>`;
+   <div class="card"><h3>🔒 Tutup Buku / Kunci Periode (admin)</h3>
+   <div class="grid grid-2">
+   <div class="field required"><label>Tahun</label><input id="pe_y" value="${new Date().getFullYear()-1}" style="width:80px"></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go danger" onclick="closeYear()">Tutup & Kunci</button></div>
+   <div id="locks" class="mut">Memuat…</div></div>`;
   window._jl=[];
   api("/api/period-locks").then(l=>{$("#locks").innerHTML=l.length?("Terkunci: "+l.map(x=>x.year+" (oleh "+x.locked_by+")").join(", ")):"Belum ada periode terkunci.";}).catch(()=>{$("#locks").textContent="";});
  }
@@ -884,24 +959,30 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
    <div class="row">Lihat kartu: <select id="sc">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select><button class="go" onclick="card()">Tampilkan</button></div><div id="card"></div></div>
    <div class="card"><h3>💡 Saran Order Cerdas (30 hari terakhir, buffer 10 hari)</h3><div id="reorder">Memuat…</div></div>
    <div class="card"><h3>Stock Opname (penyesuaian + jurnal selisih)</h3>
-   <div class="row">Barang <select id="o_item">${invItems.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
-   Gudang <select id="o_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select>
-   Stok fisik <input id="o_qty" style="width:80px"> Tgl <input type="date" id="o_date" value="${today()}">
-   <button class="go" onclick="opname()">Simpan Opname</button></div></div>
+   <div class="grid grid-2">
+   <div class="field required"><label>Barang</label><select id="o_item">${invItems.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select></div>
+   <div class="field required"><label>Gudang</label><select id="o_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></div>
+   <div class="field"><label>Stok fisik</label><input id="o_qty" style="width:80px"></div>
+   <div class="field required"><label>Tanggal</label><input type="date" id="o_date" value="${today()}"></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="opname()">Simpan Opname</button></div></div>
    <div class="card"><h3>Mutasi Antar Gudang</h3>
-   <div class="row">Barang <select id="t_item">${invItems.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
-   Dari <select id="t_from">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select>
-   Ke <select id="t_to">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select>
-   Qty <input id="t_qty" style="width:80px"> Tgl <input type="date" id="t_date" value="${today()}">
-   <button class="go" onclick="transfer()">Pindahkan</button></div></div>`;
+   <div class="grid grid-2">
+   <div class="field required"><label>Barang</label><select id="t_item">${invItems.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select></div>
+   <div class="field required"><label>Dari</label><select id="t_from">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></div>
+   <div class="field required"><label>Ke</label><select id="t_to">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></div>
+   <div class="field"><label>Qty</label><input id="t_qty" style="width:80px"></div>
+   <div class="field required"><label>Tanggal</label><input type="date" id="t_date" value="${today()}"></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="transfer()">Pindahkan</button></div></div>`;
    }
    if(stab==='sa'){
     h+=`<div class="grid" style="grid-template-columns:1fr 1fr;gap:24px">
     <div class="card"><h3><span class="card-icon">📝</span>Form Stok Opname</h3>
-    <div class="grid grid-2">
-    <div class="field"><label>Tanggal</label><input id="sa_d" type="date"></div>
-    <div class="field"><label>Gudang</label><select id="sa_wh"><option value="">Pilih...</option>${WH.map(x=>`<option value="${x.id}">${esc(x.warehouse_name)}</option>`).join("")}</select></div>
-    </div>
+     <div class="grid grid-2">
+     <div class="field required"><label>Tanggal</label><input id="sa_d" type="date"></div>
+     <div class="field required"><label>Gudang</label><select id="sa_wh"><option value="">Pilih...</option>${WH.map(x=>`<option value="${x.id}">${esc(x.warehouse_name)}</option>`).join("")}</select></div>
+     </div>
     <div class="field"><label>Catatan</label><input id="sa_note" placeholder="Catatan opname"></div>
     <div class="card" style="background:#f0fdf4;border:1px solid #22c55e33">
     <div style="display:flex;align-items:center;gap:12px">
@@ -936,10 +1017,10 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
    if(stab==='adj'){
     h+=`<div class="grid" style="grid-template-columns:1fr 1fr;gap:24px">
     <div class="card"><h3><span class="card-icon">📝</span>Adjustment Manual</h3>
-    <div class="grid grid-2">
-    <div class="field"><label>Tanggal</label><input id="adj_d" type="date"></div>
-    <div class="field"><label>Gudang</label><select id="adj_wh"><option value="">Pilih...</option>${WH.map(x=>`<option value="${x.id}">${esc(x.warehouse_name)}</option>`).join("")}</select></div>
-    </div>
+     <div class="grid grid-2">
+     <div class="field required"><label>Tanggal</label><input id="adj_d" type="date"></div>
+     <div class="field required"><label>Gudang</label><select id="adj_wh"><option value="">Pilih...</option>${WH.map(x=>`<option value="${x.id}">${esc(x.warehouse_name)}</option>`).join("")}</select></div>
+     </div>
     <div class="field"><label>Jenis</label><select id="adj_kind"><option value="IN">Stok Masuk (+)</option><option value="OUT">Stok Keluar (-)</option></select></div>
     <div class="field"><label>Catatan</label><input id="adj_note" placeholder="Catatan adjustment"></div>
     <div class="card" style="background:#fef3c7;border:1px solid #f59e0b33">
@@ -966,9 +1047,15 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
   }
  if(cur==="Aset Tetap"){
   const a=await api("/api/assets");
-  A.innerHTML=`<div class="card"><h3>Aset Tetap + Penyusutan otomatis</h3>
-  <div class="row">Kode <input id="a_c" value="AST-001"> Nama <input id="a_n" value="Mobil Operasional"> Tgl <input type="date" id="a_d" value="${today()}">
-  Harga <input id="a_cost" value="200000000"> Umur(bln) <input id="a_u" value="48" style="width:60px"><button class="go" onclick="saveA()">Tambah</button></div></div>
+   A.innerHTML=`<div class="card"><h3>Aset Tetap + Penyusutan otomatis</h3>
+   <div class="grid grid-2">
+   <div class="field"><label>Kode</label><input id="a_c" value="AST-001"></div>
+   <div class="field required"><label>Nama</label><input id="a_n" value="Mobil Operasional"></div>
+   <div class="field required"><label>Tanggal</label><input type="date" id="a_d" value="${today()}"></div>
+   <div class="field"><label>Harga</label><input id="a_cost" value="200000000"></div>
+   <div class="field"><label>Umur(bln)</label><input id="a_u" value="48" style="width:60px"></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="saveA()">Tambah</button></div></div>
   <div class="card"><table><tr><th>Kode</th><th>Nama</th><th>Harga</th><th>Akum.</th><th>Aksi</th></tr>
   ${a.map(x=>`<tr><td>${x.asset_code}</td><td>${x.asset_name}</td><td>${fmt(x.cost)}</td><td>${fmt(x.accum_depr)}</td><td><button class="go" onclick="susut(${x.id})">Susutkan bulan ini</button></td></tr>`).join("")}</table></div>`;
  }
@@ -1034,54 +1121,93 @@ if(cur==="Laporan"){
 
   if(curSub==="Keuangan"){
    A.innerHTML=`<div class="card"><h3>Chart of Accounts (5-digit)</h3>${searchBar("Cari akun...","render()")}<table>${filterRows(COA,searchQ).map(c=>`<tr><td>${c.account_code}</td><td>${c.account_name}</td><td>${c.account_type}</td></tr>`).join("")}</table>
-   <div class="row">Kode <input id="c_c" value="63002"> Nama <input id="c_n" value="Beban Iklan"> <select id="c_t"><option>EXPENSE</option><option>ASSET</option><option>LIABILITY</option><option>EQUITY</option><option>REVENUE</option><option>COGS</option></select>
-   <button class="go" onclick="saveCOA()">Tambah Akun</button></div></div>
+   <div class="grid grid-3">
+   <div class="field"><label>Kode</label><input id="c_c" value="63002"></div>
+   <div class="field required"><label>Nama</label><input id="c_n" value="Beban Iklan"></div>
+   <div class="field"><label>Tipe</label><select id="c_t"><option>EXPENSE</option><option>ASSET</option><option>LIABILITY</option><option>EQUITY</option><option>REVENUE</option><option>COGS</option></select></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="saveCOA()">Tambah Akun</button></div></div>
    <div class="card"><h3>Master Tarif Pajak (PPN)</h3><div id="tax_list">Memuat…</div>
-   <div class="row">Kode <input id="tx_c" value="PPN12" style="width:80px"> Nama <input id="tx_n" value="PPN 12%"> Tarif% <input id="tx_r" value="12" style="width:60px">
-   <button class="go" onclick="saveTX()">Tambah Pajak</button></div></div>`;
+   <div class="grid grid-3">
+   <div class="field"><label>Kode</label><input id="tx_c" value="PPN12" style="width:80px"></div>
+   <div class="field required"><label>Nama</label><input id="tx_n" value="PPN 12%"></div>
+   <div class="field"><label>Tarif%</label><input id="tx_r" value="12" style="width:60px"></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="saveTX()">Tambah Pajak</button></div></div>`;
    loadTaxAp();
   }
   else if(curSub==="Pelanggan"){
    A.innerHTML=`<div class="card"><h3>Pelanggan (Customer + Akun Piutang)</h3>${searchBar("Cari pelanggan...","render()")}<table><tr><th>Kode</th><th>Nama</th><th>Email</th><th>Akun Piutang</th><th>Limit</th><th>Termin</th></tr>${filterRows(CUST,searchQ).map(x=>{const a=COA.find(c=>c.id===x.receivable_account_id);return `<tr class="clickable-row" onclick="goDetail('customer',${x.id})"><td>${esc(x.customer_code)}</td><td>${esc(x.customer_name)}</td><td>${esc(x.email||"")}</td><td>${a?esc(a.account_code+" "+a.account_name):""}</td><td>${fmt(x.credit_limit||0)}</td><td>${esc((x.terms||"")+" "+(x.term_days||""))}</td></tr>`;}).join("")}</table>
-   <div class="row">Kode <input id="cu_c" value="CUST-002" style="width:90px"> Nama <input id="cu_n" value=""> Email <input id="cu_e" value="" style="width:150px">
-   Akun Piutang <select id="cu_a">${COA.filter(c=>c.account_type==="ASSET").map(c=>`<option value="${c.id}"${c.account_code==="12001"?" selected":""}>${c.account_code} ${c.account_name}</option>`).join("")}</select></div>
-   <div class="row">Mata Uang ${currSelectHTML("cu_curr","IDR")}</div>
-   <div class="row">Limit piutang (0=tak terbatas) <input id="cu_l" value="0" style="width:130px"> Termin <input id="cu_t" value="NET 30" style="width:90px"> Hari <input id="cu_d" value="30" style="width:60px">
-   <button class="go" onclick="saveCU()">Tambah</button></div>
-   <div class="row">Ubah limit: <select id="cu_id">${CUST.map(x=>`<option value="${x.id}">${x.customer_name}</option>`).join("")}</select>
-   Limit <input id="cu_l2" value="0" style="width:130px"> Termin <input id="cu_t2" value="NET 30" style="width:90px"> Hari <input id="cu_d2" value="30" style="width:60px">
-   <button class="go" onclick="saveCUL()">Simpan</button></div></div>`;
+   <div class="grid grid-2">
+   <div class="field"><label>Kode</label><input id="cu_c" value="CUST-002" style="width:90px"></div>
+   <div class="field required"><label>Nama</label><input id="cu_n" value=""></div>
+   <div class="field"><label>Email</label><input id="cu_e" value="" type="email"></div>
+   <div class="field"><label>Akun Piutang</label><select id="cu_a">${COA.filter(c=>c.account_type==="ASSET").map(c=>`<option value="${c.id}"${c.account_code==="12001"?" selected":""}>${c.account_code} ${c.account_name}</option>`).join("")}</select></div>
+   <div class="field"><label>Mata Uang</label>${currSelectHTML("cu_curr","IDR")}</div>
+   </div>
+   <div class="grid grid-3">
+   <div class="field"><label>Limit piutang (0=tak terbatas)</label><input id="cu_l" value="0" style="width:130px"></div>
+   <div class="field"><label>Termin</label><input id="cu_t" value="NET 30" style="width:90px"></div>
+   <div class="field"><label>Hari</label><input id="cu_d" value="30" style="width:60px"></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="saveCU()">Tambah</button></div>
+   <div class="grid grid-3" style="margin-top:16px">
+   <div class="field required"><label>Customer</label><select id="cu_id">${CUST.map(x=>`<option value="${x.id}">${x.customer_name}</option>`).join("")}</select></div>
+   <div class="field"><label>Limit</label><input id="cu_l2" value="0" style="width:130px"></div>
+   <div class="field"><label>Termin</label><input id="cu_t2" value="NET 30" style="width:90px"></div>
+   <div class="field"><label>Hari</label><input id="cu_d2" value="30" style="width:60px"></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="saveCUL()">Simpan</button></div></div>`;
   }
   else if(curSub==="Vendor"){
    A.innerHTML=`<div class="card"><h3>Pemasok (Vendor + Akun Utang)</h3>${searchBar("Cari vendor...","render()")}<table><tr><th>Kode</th><th>Nama</th><th>Email</th><th>Akun Utang</th><th>Limit</th></tr>${filterRows(VEND,searchQ).map(x=>{const a=COA.find(c=>c.id===x.payable_account_id);return `<tr class="clickable-row" onclick="goDetail('vendor',${x.id})"><td>${x.vendor_code}</td><td>${x.vendor_name}</td><td>${x.email||""}</td><td>${a?a.account_code+" "+a.account_name:""}</td><td>${fmt(x.credit_limit||0)}</td></tr>`;}).join("")}</table>
-   <div class="row">Kode <input id="vn_c" value="VEND-002" style="width:90px"> Nama <input id="vn_n" value=""> Email <input id="vn_e" value="" style="width:150px">
-   Akun Utang <select id="vn_a">${COA.filter(c=>c.account_type==="LIABILITY").map(c=>`<option value="${c.id}"${c.account_code==="21001"?" selected":""}>${c.account_code} ${c.account_name}</option>`).join("")}</select>
-   <div class="row">Mata Uang ${currSelectHTML("vn_curr","IDR")}</div>
-   <button class="go" onclick="saveVN()">Tambah</button></div></div>
+   <div class="grid grid-2">
+   <div class="field"><label>Kode</label><input id="vn_c" value="VEND-002" style="width:90px"></div>
+   <div class="field required"><label>Nama</label><input id="vn_n" value=""></div>
+   <div class="field"><label>Email</label><input id="vn_e" value="" type="email"></div>
+   <div class="field"><label>Akun Utang</label><select id="vn_a">${COA.filter(c=>c.account_type==="LIABILITY").map(c=>`<option value="${c.id}"${c.account_code==="21001"?" selected":""}>${c.account_code} ${c.account_name}</option>`).join("")}</select></div>
+   <div class="field"><label>Mata Uang</label>${currSelectHTML("vn_curr","IDR")}</div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="saveVN()">Tambah</button></div></div>
    <div class="card"><h3>Vendor & Limit Utang (0 = tanpa limit)</h3><table><tr><th>Kode</th><th>Nama</th><th>Limit</th></tr>${VEND.map(v=>`<tr><td>${v.vendor_code}</td><td>${v.vendor_name}</td><td>${fmt(v.credit_limit||0)}</td></tr>`).join("")}</table>
-   <div class="row">Vendor <select id="vl_id">${VEND.map(v=>`<option value="${v.id}">${v.vendor_name}</option>`).join("")}</select>
-   Limit <input id="vl_amt" value="50000000"><button class="go" onclick="saveVL()">Simpan Limit</button></div></div>`;
+   <div class="grid grid-2">
+   <div class="field required"><label>Vendor</label><select id="vl_id">${VEND.map(v=>`<option value="${v.id}">${v.vendor_name}</option>`).join("")}</select></div>
+   <div class="field"><label>Limit</label><input id="vl_amt" value="50000000"></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="saveVL()">Simpan Limit</button></div></div>`;
   }
   else if(curSub==="Persediaan"){
    A.innerHTML=`<div class="card"><h3>Barang, Satuan & Metode HPP</h3>${searchBar("Cari barang...","render()")}<table><tr><th>Kode</th><th>Nama</th><th>Stok (dasar)</th><th>Satuan</th><th>Metode</th><th>Nilai Stok</th><th></th></tr>${filterRows(ITEMS,searchQ).map(i=>`<tr class="clickable-row" onclick="goDetail('item',${i.id})"><td>${i.item_code}</td><td>${i.item_name}</td><td>${i.stock} ${i.base_unit}</td><td>${(i.units||[]).map(u=>u.unit_code+"×"+u.conversion).join(", ")}</td><td>${methOf(i.item_code)}</td><td>${fmt(valOf(i.item_code))}</td><td>${i.item_type==="INVENTORY"?`<button class="go" onclick="event.stopPropagation();setMethod(${i.id},'${methOf(i.item_code)==="FIFO"?"AVERAGE":"FIFO"}')">jadi ${methOf(i.item_code)==="FIFO"?"AVERAGE":"FIFO"}</button>`:""}</td></tr>`).join("")}</table>
-   <div class="row">Barang <select id="u_item">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
-   Satuan <input id="u_code" value="BOX" style="width:70px"> Isi (konversi) <input id="u_conv" value="10" style="width:80px">
-   <button class="go" onclick="saveU()">Tambah Satuan</button></div></div>
+   <div class="grid grid-3">
+   <div class="field required"><label>Barang</label><select id="u_item">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select></div>
+   <div class="field"><label>Satuan</label><input id="u_code" value="BOX" style="width:70px"></div>
+   <div class="field"><label>Isi (konversi)</label><input id="u_conv" value="10" style="width:80px"></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="saveU()">Tambah Satuan</button></div></div>
    <div class="card"><h3>Gudang & Cabang</h3><table><tr><th>Kode</th><th>Gudang</th><th>Cabang</th></tr>${WH.map(w=>{const b=BR.find(x=>x.id===w.branch_id);return `<tr><td>${w.warehouse_code}</td><td>${w.warehouse_name}</td><td>${b?b.branch_code:""}</td></tr>`;}).join("")}</table>
-   <div class="row">Gudang <select id="wb_id">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select>
-   Cabang <select id="wb_br">${BR.map(b=>`<option value="${b.id}">${b.branch_code}</option>`).join("")}</select>
-   <button class="go" onclick="saveWB()">Set Cabang Gudang</button></div></div>`;
+   <div class="grid grid-2">
+   <div class="field required"><label>Gudang</label><select id="wb_id">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></div>
+   <div class="field required"><label>Cabang</label><select id="wb_br">${BR.map(b=>`<option value="${b.id}">${b.branch_code}</option>`).join("")}</select></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="saveWB()">Set Cabang Gudang</button></div></div>`;
   }
   else if(curSub==="Sales"){
    A.innerHTML=`<div class="card"><h3>Salesman, Komisi & Target</h3>${searchBar("Cari salesman...","render()")}<table><tr><th>Kode</th><th>Nama</th><th>Komisi%</th><th>Target/bln</th></tr>${filterRows(SP,searchQ).map(s=>`<tr><td>${s.sp_code}</td><td>${s.sp_name}</td><td>${s.commission_pct}%</td><td>${fmt(s.monthly_target)}</td></tr>`).join("")}</table>
-   <div class="row">Kode <input id="sp_c" value="SP-001" style="width:80px"> Nama <input id="sp_n" value="Budi">
-   Komisi% <input id="sp_p" value="3" style="width:60px"> Target <input id="sp_t" value="50000000" style="width:130px">
-   <button class="go" onclick="saveSP()">Tambah</button></div></div>`;
+   <div class="grid grid-2">
+   <div class="field"><label>Kode</label><input id="sp_c" value="SP-001" style="width:80px"></div>
+   <div class="field required"><label>Nama</label><input id="sp_n" value="Budi"></div>
+   <div class="field"><label>Komisi%</label><input id="sp_p" value="3" style="width:60px"></div>
+   <div class="field"><label>Target</label><input id="sp_t" value="50000000" style="width:130px"></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="saveSP()">Tambah</button></div></div>`;
   }
   else if(curSub==="Organisasi"){
    A.innerHTML=`<div class="card"><h3>Cabang</h3>${searchBar("Cari cabang...","render()")}<table><tr><th>Kode</th><th>Nama</th><th>Gudang</th></tr>${filterRows(BR,searchQ).map(b=>`<tr><td>${b.branch_code}</td><td>${b.branch_name}</td><td>${b.n_wh}</td></tr>`).join("")}</table>
-   <div class="row">Kode <input id="br_c" value="CAB-SBY" style="width:90px"> Nama <input id="br_n" value="Cabang Surabaya">
-   <button class="go" onclick="saveBR()">Tambah Cabang</button></div></div>
+   <div class="grid grid-2">
+   <div class="field required"><label>Kode</label><input id="br_c" value="CAB-SBY" style="width:90px"></div>
+   <div class="field required"><label>Nama</label><input id="br_n" value="Cabang Surabaya"></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="saveBR()">Tambah Cabang</button></div></div>
    <div class="card"><h3>Karyawan</h3><div id="emp_list">Memuat…</div>
    <div class="row">Kode <input id="em_c" value="EMP-002" style="width:90px"> Nama <input id="em_n" value="">
    Jabatan <input id="em_j" value="Staff" style="width:100px"> Gaji <input id="em_g" value="5000000" style="width:120px">
@@ -1093,9 +1219,13 @@ if(cur==="Laporan"){
    A.innerHTML=`${ME.role==="ADMIN"?`<div class="card"><h3>Backup & Restore Database</h3><p class="mut">Unduh file database SQLite (jadwalkan berkala, simpan di tempat aman).</p><div class="row"><a href="/api/backup?token=${tok()}"><button class="go">Unduh Backup</button></a></div>
    <div class="row"><input type="file" id="rs_f" accept=".db"><button class="go" onclick="restore()">Restore dari File</button></div><div id="rs_out" class="mut"></div></div>
    <div class="card"><h3>User & Peran</h3><table><tr><th>Username</th><th>Nama</th><th>Peran</th><th>Aktif</th></tr>${users.map(u=>`<tr><td>${u.username}</td><td>${u.full_name}</td><td>${u.role}</td><td>${u.is_active?"Ya":"Tidak"}</td></tr>`).join("")}</table>
-   <div class="row">Username <input id="nu_u" value=""> Password <input id="nu_p" value=""> Nama <input id="nu_n" value="">
-   Peran <select id="nu_r"><option>KASIR</option><option>GUDANG</option><option>HRD</option><option>FINANCE</option><option>MANAGER</option><option>ADMIN</option></select>
-   <button class="go" onclick="saveNU()">Tambah User</button></div></div>
+   <div class="grid grid-2">
+   <div class="field required"><label>Username</label><input id="nu_u" value=""></div>
+   <div class="field required"><label>Password</label><input id="nu_p" value="" type="password"></div>
+   <div class="field required"><label>Nama</label><input id="nu_n" value=""></div>
+   <div class="field"><label>Peran</label><select id="nu_r"><option>KASIR</option><option>GUDANG</option><option>HRD</option><option>FINANCE</option><option>MANAGER</option><option>ADMIN</option></select></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="saveNU()">Tambah User</button></div></div>
    <div class="card" style="cursor:pointer" onclick="loadSistem('currency')"><h3>💱 Mata Uang</h3><p>Konfigurasi mata uang & kurs</p></div>`:""}
    ${ME.role!=="KASIR"?`<div class="card"><h3>Log Aktivitas</h3><table><tr><th>Waktu</th><th>User</th><th>Aksi</th></tr>${logs.slice(0,50).map(l=>`<tr><td>${esc(l.created_at||"")}</td><td>${esc(l.username)}</td><td>${esc(l.action)}</td></tr>`).join("")}</table></div>`:""}`;
   }
@@ -1113,20 +1243,33 @@ if(cur==="Laporan"){
   <pre>${JSON.stringify(w,null,1).slice(0,3000)}</pre></div>`;
  }
  if(cur==="HRD"){
-  A.innerHTML=`<div class="card"><h3>👥 Karyawan</h3><div id="emp_list">Memuat…</div>
-  <div class="row">Kode <input id="em_c" value="EMP-002" style="width:90px"> Nama <input id="em_n" value="">
-  Jabatan <input id="em_j" value="Staff" style="width:100px"> Gaji <input id="em_g" value="5000000" style="width:120px">
-  Kuota cuti <input id="em_q" value="12" style="width:60px"><button class="go" onclick="saveEM()">Tambah</button></div></div>
-  <div class="card"><h3>🌴 Cuti (pengajuan + approval)</h3>
-  <div class="row">Karyawan <select id="lv_emp"></select> Dari <input type="date" id="lv_f" value="${today()}">
-  Sampai <input type="date" id="lv_t" value="${today()}"> Alasan <input id="lv_r" value="">
-  <button class="go" onclick="saveLV()">Ajukan</button></div><div id="lv_list">Memuat…</div></div>
+   A.innerHTML=`<div class="card"><h3>👥 Karyawan</h3><div id="emp_list">Memuat…</div>
+   <div class="grid grid-2">
+   <div class="field"><label>Kode</label><input id="em_c" value="EMP-002" style="width:90px"></div>
+   <div class="field required"><label>Nama</label><input id="em_n" value=""></div>
+   <div class="field"><label>Jabatan</label><input id="em_j" value="Staff" style="width:100px"></div>
+   <div class="field"><label>Gaji</label><input id="em_g" value="5000000" style="width:120px"></div>
+   <div class="field"><label>Kuota cuti</label><input id="em_q" value="12" style="width:60px"></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="saveEM()">Tambah</button></div></div>
+   <div class="card"><h3>🌴 Cuti (pengajuan + approval)</h3>
+   <div class="grid grid-2">
+   <div class="field required"><label>Karyawan</label><select id="lv_emp"></select></div>
+   <div class="field required"><label>Dari</label><input type="date" id="lv_f" value="${today()}"></div>
+   <div class="field required"><label>Sampai</label><input type="date" id="lv_t" value="${today()}"></div>
+   <div class="field required"><label>Alasan</label><input id="lv_r" value=""></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="saveLV()">Ajukan</button></div><div id="lv_list">Memuat…</div></div>
   <div class="card"><h3>📊 Rekap Kehadiran</h3>
   <div class="row">Bulan <input type="month" id="rc_m" value="${today().slice(0,7)}"><button class="go" onclick="loadRecap()">Tampilkan</button></div><div id="rc_out"></div></div>
-  <div class="card"><h3>💰 Penggajian + PPh 21</h3>
-  <div class="row">Nama <input id="pr_n" value="Andi"> Tgl <input type="date" id="pr_d" value="${today()}">
-  Bruto <input id="pr_g" value="10000000"> PPh21 (isi sesuai hitungan pajak) <input id="pr_p" value="500000">
-  <button class="go" onclick="savePR()">Posting Gaji (Dr Beban / Cr PPh21+Utang Gaji)</button></div><div id="pr_out"></div></div>
+   <div class="card"><h3>💰 Penggajian + PPh 21</h3>
+   <div class="grid grid-2">
+   <div class="field required"><label>Nama</label><input id="pr_n" value="Andi"></div>
+   <div class="field required"><label>Tanggal</label><input type="date" id="pr_d" value="${today()}"></div>
+   <div class="field"><label>Bruto</label><input id="pr_g" value="10000000"></div>
+   <div class="field"><label>PPh21 (isi sesuai hitungan pajak)</label><input id="pr_p" value="500000"></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="savePR()">Posting Gaji (Dr Beban / Cr PPh21+Utang Gaji)</button></div><div id="pr_out"></div></div>
   <div class="card"><h3>Riwayat Gaji</h3><div id="pr_hist">Memuat…</div></div>`;
   api("/api/payroll").then(h=>{$("#pr_hist").innerHTML=`<table><tr><th>Tgl</th><th>Nama</th><th>Bruto</th><th>PPh21</th><th>Bersih</th><th>Oleh</th></tr>${h.map(x=>`<tr><td>${x.transaction_date}</td><td>${x.employee_name}</td><td>${fmt(x.gross)}</td><td>${fmt(x.pph21)}</td><td>${fmt(x.net)}</td><td>${x.created_by}</td></tr>`).join("")}</table>`;}).catch(e=>{$("#pr_hist").textContent=e.message;});
   api("/api/employees").then(e=>{window._emps=e;
@@ -1143,21 +1286,25 @@ window.saveSale=async()=>{
  const tiv=+($("#ti_val")?$("#ti_val").value:0)||0;
  const lines=gridLines('sg').concat(_sl);
  if(!lines.length)return alert("Isi minimal 1 baris");
+ if(!$("#s_cust").value){alert("Customer wajib dipilih!");$("#s_cust").focus();return;}
+ if(!$("#s_date").value){alert("Tanggal wajib diisi!");$("#s_date").focus();return;}
  try{showLoading("#app button.go","Menyimpan...");
  const body={customer_id:+$("#s_cust").value,warehouse_id:+$("#s_wh").value,date:$("#s_date").value,tax_rate:+$("#s_tax").value,lines};
  if($("#s_sp").value)body.salesperson_id=+$("#s_sp").value;
  if(tiv>0)body.trade_in={item_id:+$("#ti_item").value,qty:+$("#ti_qty").value,value:tiv,note:$("#ti_note").value,warehouse_id:+$("#s_wh").value};
  const r=await api("/api/sales",{method:"POST",body:JSON.stringify(body)});
- alert("Tersimpan "+r.invoice+" "+fmt(r.total)+" (piutang "+fmt(r.receivable)+", komisi "+fmt(r.commission)+")");render();}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
+ showToast("Berhasil","Faktur "+r.invoice+" tersimpan","success");render();}catch(e){showToast("Error",e.message,"error")}finally{hideLoading("#app button.go");}};
 window.saveSP=async()=>{try{await api("/api/salespersons",{method:"POST",body:JSON.stringify({sp_code:$("#sp_c").value,sp_name:$("#sp_n").value,commission_pct:+$("#sp_p").value,monthly_target:+$("#sp_t").value})});loadM().then(render);}catch(e){alert(e.message)}};
 window.loadTargets=async()=>{try{const t=await api("/api/targets?month="+$("#tg_m").value);
  $("#tg_out").innerHTML=`<table><tr><th>Salesman</th><th>Komisi%</th><th>Target</th><th>Realisasi</th><th>Trx</th><th>%</th><th>Komisi Terutang</th></tr>${t.rows.map(r=>`<tr><td>${r.sp_name}</td><td>${r.commission_pct}%</td><td>${fmt(r.target)}</td><td>${fmt(r.realisasi)}</td><td>${r.transaksi}</td><td>${r.pencapaian}%</td><td>${fmt(r.komisi)}</td></tr>`).join("")}</table>`;}catch(e){alert(e.message)}};
 window.savePR=async()=>{try{const r=await api("/api/payroll",{method:"POST",body:JSON.stringify({date:$("#pr_d").value,employee_name:$("#pr_n").value,gross:+$("#pr_g").value,pph21:+$("#pr_p").value})});alert("Gaji terposting, bersih "+fmt(r.net));render();}catch(e){alert(e.message)}};
 window.saveBuy=async()=>{
  try{const lines=gridLines('pg').concat(_pl);if(!lines.length)return alert("Isi minimal 1 baris");
+ if(!$("#p_vend").value){alert("Vendor wajib dipilih!");$("#p_vend").focus();return;}
+ if(!$("#p_date").value){alert("Tanggal wajib diisi!");$("#p_date").focus();return;}
  showLoading("#app button.go","Menyimpan...");
  const r=await api("/api/purchases",{method:"POST",body:JSON.stringify({vendor_id:+$("#p_vend").value,warehouse_id:+$("#p_wh").value,date:$("#p_date").value,tax_rate:+$("#p_tax").value,lines})});
- alert("Tersimpan "+r.invoice);loadM().then(render);}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
+ showToast("Berhasil","Faktur "+r.invoice+" tersimpan","success");loadM().then(render);}catch(e){showToast("Error",e.message,"error")}finally{hideLoading("#app button.go");}};
 window.saveT=async()=>{try{await api("/api/transfers",{method:"POST",body:JSON.stringify({from_account:+$("#t_from").value,to_account:+$("#t_to").value,amount:+$("#t_amt").value,date:$("#t_date").value,note:$("#t_note").value})});alert("Transfer tercatat");render();}catch(e){alert(e.message)}};
 window.saveRS=async()=>{try{const r=await api("/api/sales/returns",{method:"POST",body:JSON.stringify({sales_invoice_id:+$("#rs_inv").value,warehouse_id:+$("#rs_wh").value,date:$("#rs_date").value,lines:[{item_id:+$("#rs_item").value,qty:+$("#rs_qty").value}]})});alert("Retur "+r.return+" "+fmt(r.total));loadM().then(render);}catch(e){alert(e.message)}};
 window.saveRP=async()=>{try{const r=await api("/api/purchases/returns",{method:"POST",body:JSON.stringify({purchase_invoice_id:+$("#rp_inv").value,warehouse_id:+$("#rp_wh").value,date:$("#rp_date").value,lines:[{item_id:+$("#rp_item").value,qty:+$("#rp_qty").value}]})});alert("Retur "+r.return+" "+fmt(r.total));loadM().then(render);}catch(e){alert(e.message)}};
@@ -1190,18 +1337,18 @@ window.giroClear=async id=>{try{await api("/api/giros/clear",{method:"POST",body
 window.giroReject=async id=>{if(!confirm("Tolak giro ini? Piutang/utang kembali."))return;try{await api("/api/giros/reject",{method:"POST",body:JSON.stringify({id,date:today()})});render();}catch(e){alert(e.message)}};
 window.closeYear=async()=>{const y=$("#pe_y").value;if(!confirm(`Tutup buku tahun ${y}? Jurnal penutup dibuat & periode dikunci permanen.`))return;try{const r=await api("/api/period-end",{method:"POST",body:JSON.stringify({year:y})});alert("Laba bersih "+fmt(r.net_income)+". Periode dikunci.");render();}catch(e){alert(e.message)}};
 window.saveCU=async()=>{
- try{if(!$("#cu_n").value.trim())return alert("Nama pelanggan wajib diisi!");
+ try{if(!$("#cu_n").value.trim()){alert("Nama pelanggan wajib diisi!");$("#cu_n").focus();return;}
  showLoading("#app button.go","Menyimpan...");
  await api("/api/customers",{method:"POST",body:JSON.stringify({customer_code:$("#cu_c").value,customer_name:$("#cu_n").value,email:$("#cu_e").value,receivable_account_id:+$("#cu_a").value,currency_code:$("#cu_curr").value})});
  const cu=CUST.find(x=>x.customer_code===$("#cu_c").value);
  if(cu)await api("/api/customers/limit",{method:"POST",body:JSON.stringify({id:cu.id,credit_limit:+$("#cu_l").value,terms:$("#cu_t").value,term_days:+$("#cu_d").value})});
- loadM().then(render);}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
+ showToast("Berhasil","Customer tersimpan","success");loadM().then(render);}catch(e){showToast("Error",e.message,"error")}finally{hideLoading("#app button.go");}};
 window.saveCUL=async()=>{try{await api("/api/customers/limit",{method:"POST",body:JSON.stringify({id:+$("#cu_id").value,credit_limit:+$("#cu_l2").value,terms:$("#cu_t2").value,term_days:+$("#cu_d2").value})});loadM().then(render);}catch(e){alert(e.message)}};
 window.saveVN=async()=>{
- try{if(!$("#vn_n").value.trim())return alert("Nama vendor wajib diisi!");
+ try{if(!$("#vn_n").value.trim()){alert("Nama vendor wajib diisi!");$("#vn_n").focus();return;}
  showLoading("#app button.go","Menyimpan...");
  await api("/api/vendors",{method:"POST",body:JSON.stringify({vendor_code:$("#vn_c").value,vendor_name:$("#vn_n").value,email:$("#vn_e").value,payable_account_id:+$("#vn_a").value,currency_code:$("#vn_curr").value})});
- loadM().then(render);}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
+ showToast("Berhasil","Vendor tersimpan","success");loadM().then(render);}catch(e){showToast("Error",e.message,"error")}finally{hideLoading("#app button.go");}};
 window.closeDoc=async(url,id)=>{try{await api(url,{method:"POST",body:JSON.stringify({id})});render();}catch(e){alert(e.message)}};
 window.addQ=()=>{const id=+$("#q_item").value;const[uc,cv]=$("#q_unit").value.split("|");_ql.push({item_id:id,qty:+$("#q_qty").value,price:+$("#q_price").value,description:$("#q_desc").value,unit_code:uc,unit_conv:+cv});$("#qlines").innerHTML=_ql.map(x=>`<div>${x.qty} ${x.unit_code} item#${x.item_id} ${x.description||""}</div>`).join("");};
 window.saveQ=async()=>{
@@ -1626,11 +1773,15 @@ window.setMethod=async(id,m)=>{if(!confirm("Ubah metode HPP ke "+m+"? Layer FIFO
 window.saveNU=async()=>{try{await api("/api/users",{method:"POST",body:JSON.stringify({username:$("#nu_u").value,password:$("#nu_p").value,full_name:$("#nu_n").value,role:$("#nu_r").value})});render();}catch(e){alert(e.message)}};
 window.savePay=async()=>{
  try{const tot=_al.reduce((a,x)=>a+x.amount,0);
+ if(!tot)return alert("Isi minimal 1 alokasi");
+ if(!$("#k_cash").value){alert("Akun kas wajib dipilih!");$("#k_cash").focus();return;}
+ if(!$("#k_c").value){alert("Kontak wajib dipilih!");$("#k_c").focus();return;}
+ if(!_al.length)return alert("Isi minimal 1 alokasi pembayaran");
  showLoading("#app button.go","Menyimpan...");
  const rate=+$("#k_rate").value||1;
- const curr=(_cs.find(c=>c.id===+$("#k_c").value)?.currency_code||"IDR");
+ const curr=(($("#k_kind").value==="AR"?CUST:VEND).find(c=>c.id===+$("#k_c").value)?.currency_code||"IDR");
  await api("/api/payments",{method:"POST",body:JSON.stringify({kind:$("#k_kind").value,cash_account_id:+$("#k_cash").value,contact_id:+$("#k_c").value,amount:tot,date:$("#k_date").value,note:$("#k_note").value,allocations:_al,currency:curr,exchange_rate:rate})});
- alert("Pembayaran "+formatCurrency(tot,curr)+" tercatat");render();}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
+ showToast("Berhasil","Pembayaran "+formatCurrency(tot,curr)+" tercatat","success");render();}catch(e){showToast("Error",e.message,"error")}finally{hideLoading("#app button.go");}};
 window.kindCh=()=>{const k=$("#k_kind").value;const cs=k==="AR"?CUST:VEND;const nm=k==="AR"?"customer_name":"vendor_name";
  $("#k_c").innerHTML=cs.map(c=>`<option value="${c.id}">${c[nm]}</option>`).join("");
  const ag=k==="AR"?_ag:_agAP;
@@ -1748,9 +1899,14 @@ window.saveAdj=async()=>{
  alert("Adjustment tersimpan");adjLines=[];render();}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}
 };
 window.saveJ=async()=>{
- try{showLoading("#app button.go","Posting...");
+ try{if(!_jl.length)return alert("Isi minimal 1 baris jurnal");
+ const totalDr=_jl.reduce((a,l)=>a+l.debit,0);
+ const totalCr=_jl.reduce((a,l)=>a+l.credit,0);
+ if(Math.abs(totalDr-totalCr)>0)return alert("Debit dan Kredit harus seimbang!");
+ if(!$("#j_d").value){alert("Tanggal wajib diisi!");$("#j_d").focus();return;}
+ showLoading("#app button.go","Posting...");
  await api("/api/journals",{method:"POST",body:JSON.stringify({transaction_date:$("#j_d").value,description:$("#j_desc").value,lines:_jl})});
- alert("Jurnal posted");render();}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
+ showToast("Berhasil","Jurnal posted","success");render();}catch(e){showToast("Error",e.message,"error")}finally{hideLoading("#app button.go");}};
 window.card=async()=>{const r=await api("/api/stock-card?item_id="+$("#sc").value);$("#card").innerHTML=`<table><tr><th>Tgl</th><th>Ref</th><th>In</th><th>Out</th><th>HPP</th></tr>${r.map(x=>`<tr><td>${x.transaction_date}</td><td>${x.reference_type}</td><td>${x.qty_in}</td><td>${x.qty_out}</td><td>${fmt(x.cogs_unit_price)}</td></tr>`).join("")}</table>`;};
 window.saveA=async()=>{await api("/api/assets",{method:"POST",body:JSON.stringify({asset_code:$("#a_c").value,asset_name:$("#a_n").value,purchase_date:$("#a_d").value,cost:Math.round(+$("#a_cost").value),useful_months:+$("#a_u").value})});render();};
 window.susut=async id=>{const r=await api("/api/assets/depreciate",{method:"POST",body:JSON.stringify({id,date:today()})});alert("Disusutkan "+fmt(r.amount));render();};
