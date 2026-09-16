@@ -1,0 +1,9 @@
+# Live data & secrets — JANGAN commit
+database.db
+database*.db
+data/
+backup/
+__pycache__/
+*.pyc
+.opencode/
+.tool-output/
