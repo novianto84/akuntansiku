@@ -1,0 +1,13 @@
+services:
+  erp-msp:
+    build: .
+    container_name: erp-msp
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      PORT: "8000"
+      ERP_MSP_DB: /app/data/database.db
+    volumes:
+      - ./data:/app/data
+      - ./backup:/app/backup
