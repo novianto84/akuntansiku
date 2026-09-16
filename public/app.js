@@ -1,5 +1,5 @@
 const $=s=>document.querySelector(s);
-const ALL_MENUS=["Dashboard","Penjualan","Pembelian","Kas & Bank","Buku Besar","Persediaan","Aset Tetap","Budgeting","Laporan","Master","HRD","AI & Integrasi"];
+const ALL_MENUS=["Dashboard","Penjualan","Pembelian","Kas & Bank","Buku Besar","Persediaan","Aset Tetap","Proyek","Budgeting","Laporan","Master","HRD","AI & Integrasi"];
 let MENUS=ALL_MENUS;
 let COA=[],WH=[],ITEMS=[],CUST=[],VEND=[],SP=[],BR=[],TAX=[],cur="Dashboard",ME=null;
 let curSub="",curDetail=null,curDetailId=null,searchQ="";
@@ -9,8 +9,24 @@ const SUB_ICONS={"Chart of Accounts":"📒","Pajak":"🏷️","Daftar Pelanggan"
 const fmt=n=>"Rp "+Number(Math.round(n||0)).toLocaleString("id-ID");
 const esc=s=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 const today=()=>new Date().toISOString().slice(0,10);
+// Fase 1: modal generik + konfirmasi + pager + hash-router ringan
+window.openModal=html=>{closeModal();const o=document.createElement("div");o.className="modal-overlay";o.id="modal_ov";
+ o.innerHTML=`<div class="modal">${html}</div>`;o.addEventListener("click",e=>{if(e.target===o)closeModal();});document.body.appendChild(o);};
+window.closeModal=()=>{const o=$("#modal_ov");if(o)o.remove();};
+window.confirmModal=msg=>new Promise(res=>{openModal(`<h3>Konfirmasi</h3><p>${esc(msg)}</p><div class="row"><button class="go danger" id="cf_y">Ya, lanjut</button><button class="go" id="cf_n">Batal</button></div>`);
+ $("#cf_y").onclick=()=>{closeModal();res(true);};$("#cf_n").onclick=()=>{closeModal();res(false);};});
+window.pager=(rows,per,id,cols)=>{const pg=window["_pg_"+id]||0;const n=Math.max(1,Math.ceil(rows.length/per));
+ const p=Math.min(pg,n-1);window["_pg_"+id]=p;const sl=rows.slice(p*per,p*per+per);
+ return `<table><thead><tr>${cols.map(c=>`<th>${c[1]}</th>`).join("")}</tr></thead><tbody>${sl.map(r=>`<tr>${cols.map(c=>`<td>${c[2](r)}</td>`).join("")}</tr>`).join("")||'<tr><td colspan="9">Kosong</td></tr>'}</tbody></table>
+ <div class="pager"><button onclick="window['_pg_${id}']=0;render()">⏮</button><button onclick="window['_pg_${id}']=${Math.max(0,p-1)};render()">‹</button><span>Hal ${p+1}/${n} (${rows.length})</span><button onclick="window['_pg_${id}']=${Math.min(n-1,p+1)};render()">›</button></div>`;};
+const ROUTES={"#/dashboard":"Dashboard","#/penjualan":"Penjualan","#/pembelian":"Pembelian","#/kas":"Kas & Bank","#/buku":"Buku Besar","#/persediaan":"Persediaan","#/aset":"Aset Tetap","#/proyek":"Proyek","#/budget":"Budgeting","#/laporan":"Laporan","#/master":"Master","#/hrd":"HRD","#/ai":"AI & Integrasi"};
+window.syncHash=()=>{const h=location.hash;
+ if(h.startsWith("#/master/")){cur="Master";curSub=decodeURIComponent(h.slice(9));}
+ else if(ROUTES[h]){cur=ROUTES[h];curSub="";curDetail=null;}
+ try{$("#title").textContent=curSub?("Master — "+curSub):cur;}catch(e){}};
+window.addEventListener("hashchange",()=>{syncHash();drawNav();render();});
 const tok=()=>localStorage.getItem("tok")||"";
-const MENU_ICONS={"Dashboard":"📈","Penjualan":"🛒","Pembelian":"📦","Kas & Bank":"💰","Buku Besar":"📒","Persediaan":"🏪","Aset Tetap":"🏢","Budgeting":"💰","Laporan":"📊","Master":"⚙️","HRD":"👥","AI & Integrasi":"🤖"};
+const MENU_ICONS={"Dashboard":"📈","Penjualan":"🛒","Pembelian":"📦","Kas & Bank":"💰","Buku Besar":"📒","Persediaan":"🏪","Aset Tetap":"🏢","Proyek":"🏗️","Budgeting":"💰","Laporan":"📊","Master":"⚙️","HRD":"👥","AI & Integrasi":"🤖"};
 async function api(p,o){const r=await fetch(p,{headers:{"Content-Type":"application/json","Authorization":"Bearer "+tok()},...o});
  if(r.status===401){logout();throw new Error("Sesi habis, silakan login lagi");}
  const j=await r.json();if(!r.ok)throw new Error(j.error||"Error");return j;}
@@ -86,9 +102,10 @@ async function boot(){
   if(shortcuts[e.key]){shortcuts[e.key]();}
  });
 
- try{ME=await api("/api/me");}
- catch(e){return loginScreen();}
- const R=ME.role;
+  try{ME=await api("/api/me");}
+  catch(e){return loginScreen();}
+  syncHash();
+  const R=ME.role;
  MENUS = R==="KASIR" ? ["Dashboard","Penjualan","Pembelian","Kas & Bank","Persediaan"]
   : R==="GUDANG" ? ["Dashboard","Persediaan","Pembelian"]
    : R==="HRD" ? ["Dashboard","Master","HRD"]
@@ -131,8 +148,10 @@ function drawNav(){
  const userSection=ME?`<div class="user-info"><div class="user-avatar">${(ME.full_name||"U").charAt(0).toUpperCase()}</div><div class="user-details"><div class="user-name">${esc(ME.full_name)}</div><div class="user-role">${esc(ME.role)}</div></div></div><button onclick="chPass()" title="Ganti Password"><span class="nav-icon">🔑</span>Ganti Password</button><button onclick="logout()" title="Keluar"><span class="nav-icon">🚪</span>Keluar</button>`:"";
  nav.innerHTML=`<div class="nav-section">Menu</div>${menuHtml}${userSection}`;
 }
-function go(m){cur=m;curSub="";curDetail=null;curDetailId=null;searchQ="";$("#title").textContent=m;drawNav();render();}
-window.goMaster=sub=>{curSub=sub;curDetail=null;curDetailId=null;searchQ="";$("#title").textContent="Master — "+sub;drawNav();render();};
+function go(m){cur=m;curSub="";curDetail=null;curDetailId=null;searchQ="";$("#title").textContent=m;drawNav();
+ const rev=Object.keys(ROUTES).find(k=>ROUTES[k]===m);if(rev&&location.hash!==rev)history.replaceState(null,"",rev);render();}
+window.goMaster=sub=>{curSub=sub;curDetail=null;curDetailId=null;searchQ="";$("#title").textContent="Master — "+sub;drawNav();
+ const h="#/master/"+encodeURIComponent(sub);if(location.hash!==h)history.replaceState(null,"",h);render();};
 window.loadSistem=sub=>{
  if(sub==='currency'){
   const A=$("#app");
@@ -299,7 +318,7 @@ function renderCustomerDetail(id){
  </div>`;
 }
 window.editCustomer=id=>{curDetail="customer";curDetailId=id;render();};
-window.saveEditCust=async id=>{try{await api("/api/customers/"+id,{method:"PUT",body:JSON.stringify({customer_name:$("#ec_name").value,email:$("#ec_email").value})});await api("/api/customers/limit",{method:"POST",body:JSON.stringify({id,credit_limit:+$("#ec_limit").value,terms:$("#ec_terms").value,term_days:+$("#ec_days").value})});await loadM();alert("Tersimpan");render();}catch(e){alert(e.message)}};
+window.saveEditCust=async id=>{try{await api("/api/customers/update",{method:"POST",body:JSON.stringify({id,customer_name:$("#ec_name").value,email:$("#ec_email").value})});await api("/api/customers/limit",{method:"POST",body:JSON.stringify({id,credit_limit:+$("#ec_limit").value,terms:$("#ec_terms").value,term_days:+$("#ec_days").value})});await loadM();alert("Tersimpan");render();}catch(e){alert(e.message)}};
 async function renderSalesInvoiceDetail(id){
  try{
   const inv=(await api("/api/sales")).find(x=>x.id===id);
@@ -453,7 +472,7 @@ function renderVendorDetail(id){
  </div>`;
 }
 window.editVendor=id=>{curDetail="vendor";curDetailId=id;render();};
-window.saveEditVend=async id=>{try{await api("/api/vendors/"+id,{method:"PUT",body:JSON.stringify({vendor_name:$("#ev_name").value,email:$("#ev_email").value})});await api("/api/vendors/limit",{method:"POST",body:JSON.stringify({id,credit_limit:+$("#ev_limit").value})});await loadM();alert("Tersimpan");render();}catch(e){alert(e.message)}};
+window.saveEditVend=async id=>{try{await api("/api/vendors/update",{method:"POST",body:JSON.stringify({id,vendor_name:$("#ev_name").value,email:$("#ev_email").value})});await api("/api/vendors/limit",{method:"POST",body:JSON.stringify({id,credit_limit:+$("#ev_limit").value})});await loadM();alert("Tersimpan");render();}catch(e){alert(e.message)}};
 function renderItemDetail(id){
  const it=ITEMS.find(x=>x.id===id);if(!it)return A.innerHTML=`<div class="card">Barang tidak ditemukan.</div>`;
  const stk=window._stkCache||[];
@@ -486,7 +505,14 @@ function renderItemDetail(id){
  </div>`;
 }
 window.editItem=id=>{curDetail="item";curDetailId=id;render();};
-window.saveEditItem=async id=>{try{await api("/api/items/"+id,{method:"PUT",body:JSON.stringify({item_name:$("#ei_name").value,purchase_price:+$("#ei_bp").value,sales_price:+$("#ei_sp").value,item_type:$("#ei_type").value})});await loadM();alert("Tersimpan");render();}catch(e){alert(e.message)}};
+window.saveEditItem=async id=>{try{await api("/api/items/update",{method:"POST",body:JSON.stringify({id,item_name:$("#ei_name").value,purchase_price:+$("#ei_bp").value,sales_price:+$("#ei_sp").value,item_type:$("#ei_type").value})});await loadM();alert("Tersimpan");render();}catch(e){alert(e.message)}};
+window.deactivateIT=async(id,active)=>{if(!await confirmModal(active?"Aktifkan kembali barang ini?":"Nonaktifkan barang ini? (stok harus 0)"))return;try{await api("/api/items/deactivate",{method:"POST",body:JSON.stringify({id,is_active:active?1:0})});await loadM();render();}catch(e){alert(e.message)}};
+window.saveIT=async()=>{try{
+ const body={item_code:$("#ni_c").value.trim(),item_name:$("#ni_n").value.trim(),item_type:$("#ni_t").value,base_unit:$("#ni_u").value.trim()||"PCS",purchase_price:+$("#ni_bp").value||0,sales_price:+$("#ni_sp").value||0,cost_method:$("#ni_m").value,opening_qty:+$("#ni_oq").value||0,warehouse_id:+$("#ni_wh").value||0};
+ if(!body.item_name)return alert("Nama barang wajib diisi");
+ if(body.opening_qty>0&&!body.warehouse_id)return alert("Pilih gudang untuk stok awal");
+ const r=await api("/api/items",{method:"POST",body:JSON.stringify(body)});await loadM();alert("Barang ditambah: "+r.item_code);render();}catch(e){alert(e.message)}};
+window.quickItem=async()=>{const n=prompt("Nama barang baru:");if(!n)return;try{const r=await api("/api/items",{method:"POST",body:JSON.stringify({item_name:n})});await loadM();render();alert("Barang ditambah: "+r.item_code);}catch(e){alert(e.message)}};
 window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="+id);curDetail="stockcard";curDetailId=id;window._stockCardData=r;render();}catch(e){alert(e.message)}};
  async function render(){
   const A=$("#app");
@@ -566,55 +592,62 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
  }
  if(cur==="Penjualan"){
   const sub=window._psub||"invoice";
-  const inv=await api("/api/sales");const rets=await api("/api/returns?type=SALES");
-  const sq=await api("/api/quotations");const so=await api("/api/sales-orders");const dn=await api("/api/deliveries");
-   let h=`<div class="row">${[["quotation","Penawaran"],["order","Pesanan"],["delivery","Surat Jalan"],["invoice","Faktur"],["return","Retur"],["cn","CN (Credit Note)"],["dn","DN (Debit Note)"]].map(t=>`<button class="go"${sub===t[0]?"":' style="opacity:.55"'} onclick="_psub='${t[0]}';render()">${t[1]}</button>`).join("")}</div>`;
+   const inv=await api("/api/sales");const rets=await api("/api/returns?type=SALES");
+   const sq=await api("/api/quotations");const so=await api("/api/sales-orders");const dn=await api("/api/deliveries");
+   let rmas=[];try{rmas=await api("/api/rmas");}catch(e){}
+    let h=`<div class="row">${[["quotation","Penawaran"],["order","Pesanan"],["delivery","Surat Jalan"],["invoice","Faktur"],["return","Retur"],["rma","RMA"],["cn","CN (Credit Note)"],["dn","DN (Debit Note)"]].map(t=>`<button class="go"${sub===t[0]?"":' style="opacity:.55"'} onclick="_psub='${t[0]}';render()">${t[1]}</button>`).join("")}</div>`;
    h+=`<div class="row" style="margin:16px 0"><button class="go" onclick="batchPrintInvoices()">🖨️ Batch Print Faktur</button></div>`;
    if(sub==="quotation"){
    h+=`<div class="card"><h3>Penawaran Penjualan (non-posting)</h3>
    <div class="grid grid-3">
    <div class="field required"><label>Customer</label><select id="q_cust">${CUST.map(c=>`<option value="${c.id}">${c.customer_name}</option>`).join("")}</select></div>
-   <div class="field required"><label>Tanggal</label><input type="date" id="q_date" value="${today()}"></div>
-   <div class="field"><label>PPN%</label><input id="q_tax" value="11" style="width:60px"></div>
-   </div>
+    <div class="field required"><label>Tanggal</label><input type="date" id="q_date" value="${today()}"></div>
+    <div class="field"><label>PPN%</label><input id="q_tax" value="11" style="width:60px"></div>
+    <div class="field"><label>Berlaku s/d</label><input type="date" id="q_valid" value=""></div>
+    </div>
    <div class="row">Barang <select id="q_item" onchange="unitCh('q')">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
    Satuan <select id="q_unit"></select> Qty <input id="q_qty" value="1" style="width:60px"> Harga <input id="q_price" value="100000" style="width:120px">
    Deskripsi <input id="q_desc" value="" style="width:160px">
    <button class="go" onclick="addQ()">+ baris</button></div><div id="qlines"></div>
    <button class="go" onclick="saveQ()">Simpan Penawaran</button></div>
-   <div class="card"><h3>Riwayat Penawaran</h3><table><tr><th>No</th><th>Tgl</th><th>Customer</th><th>Total</th><th>Status</th><th></th></tr>
-   ${sq.map(x=>`<tr><td>${x.quotation_number}</td><td>${x.transaction_date}</td><td>${x.customer_name}</td><td>${fmt(x.total_amount)}</td><td>${st(x.status)}</td><td>${x.status==="OPEN"?`<button class="go danger" onclick="closeDoc('/api/quotations/close',${x.id})">Close</button>`:""}</td></tr>`).join("")}</table></div>`;
+    <div class="card"><h3>Riwayat Penawaran</h3><table><tr><th>No</th><th>Tgl</th><th>Berlaku s/d</th><th>Customer</th><th>Total</th><th>Status</th><th>Diproses</th><th></th></tr>
+    ${sq.map(x=>`<tr><td>${x.quotation_number}</td><td>${x.transaction_date}</td><td>${x.valid_until||"-"}</td><td>${x.customer_name}</td><td>${fmt(x.total_amount)}</td><td>${st(x.status)}</td><td>${(x.proceeded||[]).map(p=>`<span class="tag">${p.order_number}</span>`).join("")}</td><td>${x.status==="OPEN"?`<button class="go danger" onclick="closeDoc('/api/quotations/close',${x.id})">Close</button> <button class="go danger" onclick="delDoc('/api/quotations/delete',${x.id})">Hapus</button>`:""}</td></tr>`).join("")}</table></div>`;
   }
   if(sub==="order"){
    h+=`<div class="card"><h3>Pesanan Penjualan / SO (non-posting, mengikat stok)</h3>
    <div class="grid grid-3">
    <div class="field required"><label>Customer</label><select id="o_cust">${CUST.map(c=>`<option value="${c.id}">${c.customer_name}</option>`).join("")}</select></div>
-   <div class="field required"><label>Tanggal</label><input type="date" id="o_date" value="${today()}"></div>
-   <div class="field"><label>PPN%</label><input id="o_tax" value="11" style="width:60px"></div>
-   <div class="field"><label>Dari penawaran</label><select id="o_sq"><option value="">- manual -</option>${sq.filter(x=>x.status==="OPEN").map(x=>`<option value="${x.id}">${x.quotation_number}</option>`).join("")}</select>
-   <button class="go" onclick="copySQ()">Salin</button></div>
+    <div class="field required"><label>Tanggal</label><input type="date" id="o_date" value="${today()}"></div>
+    <div class="field"><label>PPN%</label><input id="o_tax" value="11" style="width:60px"></div>
+    <div class="field"><label>Tgl kirim</label><input type="date" id="o_ship" value=""></div>
+    <div class="field"><label>PO Customer</label><input id="o_po" value="" placeholder="No PO pelanggan"></div>
+    <div class="field"><label>Dari penawaran</label><select id="o_sq"><option value="">- manual -</option>${sq.filter(x=>x.status==="OPEN").map(x=>`<option value="${x.id}">${x.quotation_number}</option>`).join("")}</select>
+    <button class="go" onclick="copySQ()">Salin</button></div>
    </div>
    <div id="oo_wrap"></div>
    <button class="go" onclick="saveO()">Simpan SO</button></div>
-   <div class="card"><h3>Riwayat SO</h3>${so.map(x=>`<details><summary class="clickable-row" onclick="goDetail('sales-order',${x.id})" style="cursor:pointer"><b>${x.order_number}</b> ${x.transaction_date} ${x.customer_name} ${fmt(x.total_amount)} ${st(x.status)}</summary>
-   <table><tr><th>Barang</th><th>Deskripsi</th><th>Order</th><th>Terkirim</th><th>Tertagih</th></tr>${x.lines.map(l=>`<tr><td>${l.item_name}</td><td>${l.description||""}</td><td>${l.quantity}</td><td>${l.delivered}</td><td>${l.invoiced}</td></tr>`).join("")}</table>
-   ${x.status!=="CLOSED"?`<button class="go danger" onclick="closeDoc('/api/sales-orders/close',${x.id})">Close</button>`:""}</details>`).join("")}</div>`;
+    <div class="card"><h3>Riwayat SO</h3>${so.map(x=>`<details><summary class="clickable-row" onclick="goDetail('sales-order',${x.id})" style="cursor:pointer"><b>${x.order_number}</b> ${x.transaction_date} ${x.customer_name} ${fmt(x.total_amount)} ${st(x.status)}</summary>
+    <table><tr><th>Barang</th><th>Deskripsi</th><th>Order</th><th>Terkirim</th><th>Tertagih</th></tr>${x.lines.map(l=>`<tr><td>${l.item_name}</td><td>${l.description||""}</td><td>${l.quantity}</td><td>${l.delivered}</td><td>${l.invoiced}</td></tr>`).join("")}</table>
+    <div class="proceed">${(x.proceeded_do||[]).map(p=>`<span class="tag">DO ${p.delivery_number}</span>`).join("")}${(x.proceeded_si||[]).map(p=>`<span class="tag">INV ${p.invoice_number}</span>`).join("")}</div>
+    ${x.status!=="CLOSED"?`<button class="go danger" onclick="closeDoc('/api/sales-orders/close',${x.id})">Close</button> <button class="go danger" onclick="delDoc('/api/sales-orders/delete',${x.id})">Hapus</button>`:""}</details>`).join("")}</div>`;
   }
   if(sub==="delivery"){
    const openSO=so.filter(x=>x.status!=="CLOSED");
    h+=`<div class="card"><h3>Surat Jalan / Delivery (stok keluar → Brg Dalam Perjalanan)</h3>
    <div class="grid grid-2">
    <div class="field required"><label>Customer</label><select id="d_cust">${CUST.map(c=>`<option value="${c.id}">${c.customer_name}</option>`).join("")}</select></div>
-   <div class="field required"><label>Tanggal</label><input type="date" id="d_date" value="${today()}"></div>
-   <div class="field"><label>Dari SO</label><select id="d_so" onchange="doLines()"><option value="">- langsung -</option>${openSO.map(x=>`<option value="${x.id}">${x.order_number} (${x.customer_name})</option>`).join("")}</select></div>
-   </div>
+    <div class="field required"><label>Tanggal</label><input type="date" id="d_date" value="${today()}"></div>
+    <div class="field"><label>Dari SO</label><select id="d_so" onchange="doLines()"><option value="">- langsung -</option>${openSO.map(x=>`<option value="${x.id}">${x.order_number} (${x.customer_name})</option>`).join("")}</select></div>
+    <div class="field"><label>Kirim ke</label><input id="d_ship" placeholder="Alamat kirim"></div>
+    <div class="field"><label>Via</label><input id="d_via" placeholder="Ekspedisi"></div>
+    </div>
    <div id="dref"></div>
    <div class="row">Barang <select id="d_item" onchange="unitCh('d')">${ITEMS.filter(i=>i.item_type==="INVENTORY").map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
    Gudang <select id="d_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select>
    Satuan <select id="d_unit"></select> Qty <input id="d_qty" value="1" style="width:60px"> Deskripsi <input id="d_desc" value="" style="width:140px">
    <button class="go" onclick="addD()">+ baris langsung</button></div><div id="dlines"></div>
    <button class="go" onclick="saveD()">Simpan Surat Jalan</button></div>
-   <div class="card"><h3>Riwayat Surat Jalan</h3>${dn.map(x=>`<details><summary><b>${x.delivery_number}</b> ${x.transaction_date} ${x.customer_name} ${st(x.status)}</summary><table><tr><th>Barang</th><th>Deskripsi</th><th>Qty</th><th>Tertagih</th></tr>${x.lines.map(l=>`<tr><td>${l.item_name}</td><td>${l.description||""}</td><td>${l.quantity}</td><td>${l.invoiced_qty}</td></tr>`).join("")}</table>${x.status==="POSTED"?`<button class="go danger" onclick="voidD(${x.id})">Void</button>`:""}</details>`).join("")}</div>`;
+    <div class="card"><h3>Riwayat Surat Jalan</h3>${dn.map(x=>`<details><summary><b>${x.delivery_number}</b> ${x.transaction_date} ${x.customer_name} ${st(x.status)}</summary><table><tr><th>Barang</th><th>Deskripsi</th><th>Qty</th><th>Tertagih</th></tr>${x.lines.map(l=>`<tr><td>${l.item_name}</td><td>${l.description||""}</td><td>${l.quantity}</td><td>${l.invoiced_qty}</td></tr>`).join("")}</table><div class="proceed">${(x.proceeded||[]).map(p=>`<span class="tag">INV ${p.invoice_number}</span>`).join("")}</div>${x.status==="POSTED"?`<button class="go" onclick="mkInv(${x.id})">Buat Invoice</button> <button class="go danger" onclick="voidD(${x.id})">Void</button>`:""}</details>`).join("")}</div>`;
   }
   if(sub==="invoice"){
    h+=`<div class="card"><h3>Buat Faktur Penjualan (auto-jurnal + auto-HPP FIFO/Average)</h3>
@@ -649,10 +682,23 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
    <div class="field"><label>Qty</label><input id="rs_qty" value="1" style="width:60px"></div>
    <div class="field required"><label>Tanggal</label><input type="date" id="rs_date" value="${today()}"></div>
    </div>
-   <div class="row" style="margin-top:12px"><button class="go" onclick="saveRS()">Catat Retur</button></div>
-   <table><tr><th>No Retur</th><th>Invoice</th><th>Tgl</th><th>Total</th></tr>${rets.map(r=>`<tr><td>${r.return_number}</td><td>${r.invoice_number}</td><td>${r.transaction_date}</td><td>${fmt(r.total_amount)}</td></tr>`).join("")}</table></div>`;
-  }
-  if(sub==="cn"){
+    <div class="row" style="margin-top:12px"><button class="go" onclick="saveRS()">Catat Retur</button></div>
+    <table><tr><th>No Retur</th><th>Invoice</th><th>Tgl</th><th>Total</th></tr>${rets.map(r=>`<tr><td>${r.return_number}</td><td>${r.invoice_number}</td><td>${r.transaction_date}</td><td>${fmt(r.total_amount)}</td></tr>`).join("")}</table></div>`;
+   }
+   if(sub==="rma"){
+    h+=`<div class="card"><h3>RMA — Return Merchandise Authorization (Accurate Deluxe)</h3>
+    <div class="grid grid-3">
+    <div class="field required"><label>Invoice</label><select id="rma_inv" onchange="rmaLines()">${inv.filter(x=>x.status!=="VOID").map(x=>`<option value="${x.id}">${x.invoice_number} (${x.customer_name})</option>`).join("")}</select></div>
+    <div class="field required"><label>Tanggal</label><input type="date" id="rma_date" value="${today()}"></div>
+    <div class="field"><label>Keluhan</label><input id="rma_complaint" placeholder="Komplain pelanggan"></div>
+    </div>
+    <div id="rma_ref"></div>
+    <div id="rma_lines_preview" class="mut"></div>
+    <button class="go" onclick="saveRMA()">Buat RMA</button></div>
+    <div class="card"><h3>Daftar RMA</h3><table><tr><th>No</th><th>Invoice</th><th>Customer</th><th>Tgl</th><th>Status</th><th>Aksi</th></tr>
+    ${rmas.map(x=>`<tr><td>${x.rma_number}</td><td>${x.invoice_number}</td><td>${x.customer_name}</td><td>${x.transaction_date}</td><td>${st(x.status)}</td><td>${x.status==="OPEN"?`<button class="go ok" onclick="rmaDecide(${x.id},1)">Approve</button> <button class="go danger" onclick="rmaDecide(${x.id},0)">Tolak</button>`:""}${x.status==="APPROVED"?`<button class="go" onclick="rmaRepair(${x.id})">Repair</button> <button class="go" onclick="rmaReplace(${x.id})">Ganti</button> <button class="go danger" onclick="rmaRefund(${x.id})">Refund</button>`:""}</td></tr>`).join("")}</table></div>`;
+   }
+   if(sub==="cn"){
    h+=`<div class="grid" style="grid-template-columns:1fr 1fr;gap:24px">
    <div class="card"><h3><span class="card-icon">📝</span>Form Credit Note</h3>
      <div class="grid grid-2">
@@ -700,7 +746,8 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
   if(sub==="quotation"){window._ql=[];unitCh('q');}
   if(sub==="order"){gridStart('oo',{type:'sale',wh:false,disc:true});window._sq=sq;}
   if(sub==="delivery"){window._dl=[];unitCh('d');window._so=so.filter(x=>x.status!=="CLOSED");}
-   if(sub==="invoice"){gridStart('sg',{type:'sale',wh:false,disc:true});window._sl=[];window._dn=dn;window._so2=so;}
+    if(sub==="invoice"){gridStart('sg',{type:'sale',wh:false,disc:true});window._sl=[];window._dn=dn;window._so2=so;}
+    if(sub==="rma"){window._rmal=[];window._rma_invs=inv;rmaLines();}
    if(sub==="cn"){cnCLines=[];api("/api/sales").then(inv=>{const el=$("#cn_list");if(el)el.innerHTML=inv.filter(x=>x.status==='OPEN').map(x=>`<div style="padding:8px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center"><div><b>${esc(x.invoice_number)}</b> - ${esc(x.customer_name)} - ${fmt(x.outstanding)}</div><button class="go" onclick="createCNFromInvoice(${x.id})">Buat CN</button></div>`).join("")||"<div class='empty-state'>Belum ada faktur</div>";});}
    if(sub==="dn"){dnDLines=[];api("/api/purchases").then(inv=>{const el=$("#dn_list");if(el)el.innerHTML=inv.filter(x=>x.status==='OPEN').map(x=>`<div style="padding:8px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center"><div><b>${esc(x.invoice_number)}</b> - ${esc(x.vendor_name)} - ${fmt(x.outstanding)}</div><button class="go" onclick="createDNFromInvoice(${x.id})">Buat DN</button></div>`).join("")||"<div class='empty-state'>Belum ada faktur</div>";});}
  }
@@ -720,23 +767,29 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
    Qty <input id="r_qty" value="10" style="width:60px"> Estimasi harga <input id="r_price" value="50000" style="width:120px"> Deskripsi <input id="r_desc" value="" style="width:140px">
    <button class="go" onclick="addR()">+ baris</button></div><div id="rlines"></div>
    <button class="go" onclick="saveR()">Simpan PR</button></div>
-   <div class="card"><h3>Riwayat PR</h3><table><tr><th>No</th><th>Tgl</th><th>Vendor</th><th>Status</th><th></th></tr>
-   ${pr.map(x=>`<tr><td>${x.requisition_number}</td><td>${x.transaction_date}</td><td>${x.vendor_name||"-"}</td><td>${st(x.status)}</td><td>${x.status==="OPEN"?`<button class="go danger" onclick="closeDoc('/api/requisitions/close',${x.id})">Close</button>`:""}</td></tr>`).join("")}</table></div>`;
+    <div class="card"><h3>Riwayat PR</h3><table><tr><th>No</th><th>Tgl</th><th>Vendor</th><th>Status</th><th></th></tr>
+    ${pr.map(x=>`<tr><td>${x.requisition_number}</td><td>${x.transaction_date}</td><td>${x.vendor_name||"-"}</td><td>${st(x.status)}</td><td>${x.status==="OPEN"?`<button class="go danger" onclick="closeDoc('/api/requisitions/close',${x.id})">Close</button> <button class="go danger" onclick="delDoc('/api/requisitions/delete',${x.id})">Hapus</button>`:""}</td></tr>`).join("")}</table></div>`;
   }
   if(sub==="order"){
    h+=`<div class="card"><h3>Pesanan Pembelian / PO (non-posting)</h3>
    <div class="grid grid-3">
    <div class="field required"><label>Vendor</label><select id="o_vend">${VEND.map(c=>`<option value="${c.id}">${c.vendor_name}</option>`).join("")}</select></div>
-   <div class="field required"><label>Tanggal</label><input type="date" id="o_date" value="${today()}"></div>
-   <div class="field"><label>PPN%</label><input id="o_tax" value="11" style="width:60px"></div>
-   <div class="field"><label>Dari PR</label><select id="o_pr"><option value="">- manual -</option>${pr.filter(x=>x.status==="OPEN").map(x=>`<option value="${x.id}">${x.requisition_number}</option>`).join("")}</select>
-   <button class="go" onclick="copyPR()">Salin</button></div>
+    <div class="field required"><label>Tanggal</label><input type="date" id="o_date" value="${today()}"></div>
+    <div class="field"><label>PPN%</label><input id="o_tax" value="11" style="width:60px"></div>
+    <div class="field"><label>FOB</label><select id="o_fob"><option value="">-</option><option>Shipping Point</option><option>Destination</option></select></div>
+    <div class="field"><label>Termin</label><input id="o_terms" value="NET 30" style="width:90px"></div>
+    <div class="field"><label>Via</label><input id="o_shipp" value="" placeholder="Ekspedisi"></div>
+    <div class="field"><label>Kirim ke</label><input id="o_shipt" value="" placeholder="Alamat"></div>
+    <div class="field"><label>Perkiraan tiba</label><input type="date" id="o_exp" value=""></div>
+    <div class="field"><label>Dari PR</label><select id="o_pr"><option value="">- manual -</option>${pr.filter(x=>x.status==="OPEN").map(x=>`<option value="${x.id}">${x.requisition_number}</option>`).join("")}</select>
+    <button class="go" onclick="copyPR()">Salin</button></div>
    </div>
    <div id="og_wrap"></div>
    <button class="go" onclick="saveO2()">Simpan PO</button></div>
    <div class="card"><h3>Riwayat PO</h3>${po.map(x=>`<details><summary class="clickable-row" onclick="goDetail('purchase-order',${x.id})" style="cursor:pointer"><b>${x.order_number}</b> ${x.transaction_date} ${x.vendor_name} ${fmt(x.total_amount)} ${st(x.status)}</summary>
-   <table><tr><th>Barang</th><th>Order</th><th>Diterima</th><th>Tertagih</th></tr>${x.lines.map(l=>`<tr><td>${l.item_name}</td><td>${l.quantity}</td><td>${l.received}</td><td>${l.billed}</td></tr>`).join("")}</table>
-   ${x.status!=="CLOSED"?`<button class="go danger" onclick="closeDoc('/api/purchase-orders/close',${x.id})">Close</button>`:""}</details>`).join("")}</div>`;
+    <table><tr><th>Barang</th><th>Order</th><th>Diterima</th><th>Tertagih</th></tr>${x.lines.map(l=>`<tr><td>${l.item_name}</td><td>${l.quantity}</td><td>${l.received}</td><td>${l.billed}</td></tr>`).join("")}</table>
+    <div class="proceed">${(x.proceeded||[]).map(p=>`<span class="tag">RI ${p.receive_number}</span>`).join("")}</div>
+    ${x.status!=="CLOSED"?`<button class="go danger" onclick="closeDoc('/api/purchase-orders/close',${x.id})">Close</button> <button class="go danger" onclick="delDoc('/api/purchase-orders/delete',${x.id})">Hapus</button>`:""}</details>`).join("")}</div>`;
   }
   if(sub==="receive"){
    const openPO=po.filter(x=>x.status!=="CLOSED");
@@ -744,8 +797,10 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
    <div class="grid grid-2">
    <div class="field required"><label>Vendor</label><select id="v_vend">${VEND.map(c=>`<option value="${c.id}">${c.vendor_name}</option>`).join("")}</select></div>
    <div class="field required"><label>Tanggal</label><input type="date" id="v_date" value="${today()}"></div>
-   <div class="field"><label>Dari PO</label><select id="v_po" onchange="riLines()"><option value="">- langsung -</option>${openPO.map(x=>`<option value="${x.id}">${x.order_number} (${x.vendor_name})</option>`).join("")}</select></div>
-   </div>
+    <div class="field"><label>Dari PO</label><select id="v_po" onchange="riLines()"><option value="">- langsung -</option>${openPO.map(x=>`<option value="${x.id}">${x.order_number} (${x.vendor_name})</option>`).join("")}</select></div>
+    <div class="field"><label>No SJ Vendor</label><input id="v_receipt" placeholder="Surat jalan pemasok"></div>
+    <div class="field"><label>Via</label><input id="v_ship" placeholder="Ekspedisi"></div>
+    </div>
    <div id="vref"></div>
    <div class="row">Barang <select id="v_item" onchange="unitCh('v')">${ITEMS.filter(i=>i.item_type==="INVENTORY").map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
    Gudang <select id="v_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select>
@@ -803,9 +858,11 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
    <div id="alocs"></div>
    <div class="grid grid-2">
    <div class="field required"><label>Tanggal</label><input type="date" id="k_date" value="${today()}"></div>
-   <div class="field"><label>Catatan</label><input id="k_note" value=""></div>
-   <div class="field"><label>Kurs</label><input id="k_rate" type="number" min="1" value="1" step="0.01" style="width:100px"></div>
-   </div>
+    <div class="field"><label>Catatan</label><input id="k_note" value=""></div>
+    <div class="field"><label>Kurs</label><input id="k_rate" type="number" min="1" value="1" step="0.01" style="width:100px"></div>
+    <div class="field"><label>Bukti Potong PPh23 No</label><input id="k_pph23" value="" placeholder="No. bukti potong"></div>
+    <div class="field"><label>PPh23 Rp</label><input id="k_pph23amt" value="0" type="number"></div>
+    </div>
    <div class="row" style="margin-top:12px">
    <button class="go" onclick="savePay()">Catat Pembayaran</button></div>
   <p class="mut">Tips rekonsiliasi: bandingkan saldo akun 11001/11002 di Trial Balance dengan mutasi di bawah. Selisih = belum rekonsil.</p></div>
@@ -895,8 +952,32 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
    const invItems=ITEMS.filter(i=>i.item_type==="INVENTORY");
    const stab=window._ssub||"default";
    let h=`<div class="row">${[["default","📦 Kartu Stok"],["sa","📝 Stok Opname"],["adj","🔧 Adjustment"]].map(t=>`<button class="go"${stab===t[0]?"":' style="opacity:.55"'} onclick="_ssub='${t[0]}';render()">${t[1]}</button>`).join("")}</div>`;
-   if(stab==="default"){
-   h+=`<div class="card"><h3>Kartu Stok (SUM in − out) + HPP Average</h3>
+    if(stab==="default"){
+    const stkById={};s.forEach(x=>{stkById[x.item_code]=(stkById[x.item_code]||0)+x.stock;});
+    h+=`<div class="card"><h3>📦 Daftar Barang</h3>
+    <table><tr><th>Kode</th><th>Nama</th><th>Tipe</th><th>Satuan</th><th>Stok</th><th>Beli</th><th>Jual</th><th>Metode</th><th>Status</th><th></th></tr>${ITEMS.map(i=>`<tr class="clickable-row" onclick="editItem(${i.id})"><td>${esc(i.item_code)}</td><td>${esc(i.item_name)}</td><td>${esc(i.item_type)}</td><td>${esc(i.base_unit)}</td><td>${stkById[i.item_code]??i.stock??0}</td><td>${fmt(i.purchase_price||0)}</td><td>${fmt(i.sales_price||0)}</td><td>${esc(i.cost_method||"AVERAGE")}</td><td>${(i.is_active??1)?"Aktif":"Nonaktif"}</td><td><button class="go danger" onclick="event.stopPropagation();deactivateIT(${i.id},${(i.is_active??1)?0:1})">${(i.is_active??1)?"Nonaktif":"Aktif"}</button></td></tr>`).join("")}</table>
+    <div class="grid grid-3" style="margin-top:12px">
+    <div class="field"><label>Kode (kosong=auto)</label><input id="ni_c" placeholder="BRG-..."></div>
+    <div class="field required"><label>Nama</label><input id="ni_n" placeholder="Nama barang"></div>
+    <div class="field"><label>Tipe</label><select id="ni_t"><option>INVENTORY</option><option>SERVICE</option><option>NON_INVENTORY</option></select></div>
+    <div class="field"><label>Satuan</label><input id="ni_u" value="PCS" style="width:80px"></div>
+    <div class="field"><label>Harga Beli</label><input id="ni_bp" value="0" type="number"></div>
+    <div class="field"><label>Harga Jual</label><input id="ni_sp" value="0" type="number"></div>
+    <div class="field"><label>Metode HPP</label><select id="ni_m"><option>AVERAGE</option><option>FIFO</option></select></div>
+    <div class="field"><label>Gudang stok awal</label><select id="ni_wh"><option value="">—</option>${WH.map(w=>`<option value="${w.id}">${esc(w.warehouse_name)}</option>`).join("")}</select></div>
+    <div class="field"><label>Stok awal</label><input id="ni_oq" value="0" type="number"></div>
+    </div>
+    <div class="row" style="margin-top:12px"><button class="go" onclick="saveIT()">+ Tambah Barang</button> <button class="go" onclick="quickItem()">⚡ Cepat</button></div></div>`;
+    h+=`<div class="card"><h3>🏷️ Kategori, Set Harga Jual & Import</h3>
+    <div class="grid grid-3">
+    <div class="field"><label>Kategori baru</label><input id="ct_n" placeholder="Elektronik"></div>
+    <div class="field"><label>Grup baru</label><input id="gr_n" placeholder="Laptop"></div>
+    <div class="row" style="align-items:end"><button class="go" onclick="saveCat()">+ Kategori</button><button class="go" onclick="saveGrp()">+ Grup</button></div>
+    </div>
+    <table><tr><th>Barang</th><th>Harga Jual</th><th></th></tr>${ITEMS.map(i=>`<tr><td>${esc(i.item_code)} ${esc(i.item_name)}</td><td><input id="sp_${i.id}" value="${i.sales_price||0}" type="number" style="width:130px"></td><td><button class="go" onclick="setPriceOne(${i.id})">Set</button></td></tr>`).join("")}</table>
+    <div class="row" style="margin-top:12px"><input type="file" id="imp_f" accept=".csv"><button class="go" onclick="importItems()">📥 Import CSV</button></div>
+    <p class="mut">Format CSV: item_code,item_name,item_type,base_unit,purchase_price,sales_price</p></div>`;
+    h+=`<div class="card"><h3>Kartu Stok (SUM in − out) + HPP Average</h3>
    <table><tr><th>Barang</th><th>Gudang</th><th>Stok</th><th>Avg Cost</th></tr>${s.map(x=>`<tr><td>${x.item_code} ${x.item_name}</td><td>${x.warehouse}</td><td>${x.stock}</td><td>${fmt(x.avg_cost)}</td></tr>`).join("")}</table>
    <div class="row">Lihat kartu: <select id="sc">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select><button class="go" onclick="card()">Tampilkan</button></div><div id="card"></div></div>
    <div class="card"><h3>💡 Saran Order Cerdas (30 hari terakhir, buffer 10 hari)</h3><div id="reorder">Memuat…</div></div>
@@ -908,15 +989,19 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
    <div class="field required"><label>Tanggal</label><input type="date" id="o_date" value="${today()}"></div>
    </div>
    <div class="row" style="margin-top:12px"><button class="go" onclick="opname()">Simpan Opname</button></div></div>
-   <div class="card"><h3>Mutasi Antar Gudang</h3>
-   <div class="grid grid-2">
-   <div class="field required"><label>Barang</label><select id="t_item">${invItems.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select></div>
-   <div class="field required"><label>Dari</label><select id="t_from">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></div>
-   <div class="field required"><label>Ke</label><select id="t_to">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></div>
-   <div class="field"><label>Qty</label><input id="t_qty" style="width:80px"></div>
-   <div class="field required"><label>Tanggal</label><input type="date" id="t_date" value="${today()}"></div>
-   </div>
-   <div class="row" style="margin-top:12px"><button class="go" onclick="transfer()">Pindahkan</button></div></div>`;
+    <div class="card"><h3>Mutasi Antar Gudang</h3>
+    <div class="grid grid-2">
+    <div class="field required"><label>Barang</label><select id="t_item">${invItems.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select></div>
+    <div class="field required"><label>Dari</label><select id="t_from">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></div>
+    <div class="field required"><label>Ke</label><select id="t_to">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></div>
+    <div class="field"><label>Qty</label><input id="t_qty" style="width:80px"></div>
+    <div class="field required"><label>Tanggal</label><input type="date" id="t_date" value="${today()}"></div>
+    <div class="field"><label>Catatan</label><input id="t_note" placeholder="keterangan"></div>
+    <div class="field"><label>Ongkir Rp (opsional)</label><input id="t_ship" value="0" type="number"></div>
+    <div class="field"><label>Kas ongkir</label><select id="t_cash">${COA.filter(c=>c.account_code.startsWith("110")).map(c=>`<option value="${c.id}">${c.account_code}</option>`).join("")}</select></div>
+    <div class="field"><label>Beban kirim</label><select id="t_exp">${COA.filter(c=>c.account_type==="EXPENSE").map(c=>`<option value="${c.id}">${c.account_code} ${c.account_name}</option>`).join("")}</select></div>
+    </div>
+    <div class="row" style="margin-top:12px"><button class="go" onclick="transfer()">Pindahkan</button></div></div>`;
    }
    if(stab==='sa'){
     h+=`<div class="grid" style="grid-template-columns:1fr 1fr;gap:24px">
@@ -987,19 +1072,38 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
    api("/api/reorder").then(r=>{$("#reorder").innerHTML=`<table><tr><th>Barang</th><th>Stok</th><th>Laku/bln</th><th>Tahan</th><th>Saran Order</th><th>Status</th></tr>${r.map(x=>`<tr><td>${x.item_code}</td><td>${x.stock}</td><td>${x.rata_hari}/hr</td><td>${x.tahan_hari} hr</td><td>${x.saran_order}</td><td>${x.status}</td></tr>`).join("")}</table>`;}).catch(e=>{$("#reorder").textContent=e.message;});
    }
   }
- if(cur==="Aset Tetap"){
-  const a=await api("/api/assets");
+  if(cur==="Aset Tetap"){
+   const a=await api("/api/assets");
+   let at=[];try{at=await api("/api/asset-types");}catch(e){}
    A.innerHTML=`<div class="card"><h3>Aset Tetap + Penyusutan otomatis</h3>
    <div class="grid grid-2">
    <div class="field"><label>Kode</label><input id="a_c" value="AST-001"></div>
    <div class="field required"><label>Nama</label><input id="a_n" value="Mobil Operasional"></div>
    <div class="field required"><label>Tanggal</label><input type="date" id="a_d" value="${today()}"></div>
    <div class="field"><label>Harga</label><input id="a_cost" value="200000000"></div>
+   <div class="field"><label>Tipe (umur auto)</label><select id="a_t"><option value="">—</option>${at.map(t=>`<option value="${t.id}">${esc(t.type_name)} (${t.useful_months} bln)</option>`).join("")}</select></div>
    <div class="field"><label>Umur(bln)</label><input id="a_u" value="48" style="width:60px"></div>
    </div>
-   <div class="row" style="margin-top:12px"><button class="go" onclick="saveA()">Tambah</button></div></div>
-  <div class="card"><table><tr><th>Kode</th><th>Nama</th><th>Harga</th><th>Akum.</th><th>Aksi</th></tr>
-  ${a.map(x=>`<tr><td>${x.asset_code}</td><td>${x.asset_name}</td><td>${fmt(x.cost)}</td><td>${fmt(x.accum_depr)}</td><td><button class="go" onclick="susut(${x.id})">Susutkan bulan ini</button></td></tr>`).join("")}</table></div>`;
+   <div class="row" style="margin-top:12px"><button class="go" onclick="saveA()">Tambah</button> <button class="go" onclick="susutMonthly()">Susutkan SEMUA bulan ini</button></div></div>
+  <div class="card"><h3>Tipe Aset</h3><div class="row"><input id="at_c" placeholder="Kode" style="width:90px"><input id="at_n" placeholder="Nama tipe"><input id="at_u" value="48" style="width:60px"><input id="at_f" placeholder="Golongan fiskal" style="width:110px"><button class="go" onclick="saveAT()">+ Tipe</button></div>
+  <table><tr><th>Kode</th><th>Nama</th><th>Umur</th><th>Fiskal</th></tr>${at.map(t=>`<tr><td>${esc(t.type_code)}</td><td>${esc(t.type_name)}</td><td>${t.useful_months}</td><td>${esc(t.fiscal_group||"")}</td></tr>`).join("")}</table></div>
+  <div class="card"><table><tr><th>Kode</th><th>Nama</th><th>Harga</th><th>Akum.</th><th>Status</th><th>Aksi</th></tr>
+   ${a.map(x=>`<tr><td>${x.asset_code}</td><td>${x.asset_name}</td><td>${fmt(x.cost)}</td><td>${fmt(x.accum_depr)}</td><td>${st(x.status||"ACTIVE")}</td><td>${(x.status||"ACTIVE")==="ACTIVE"?`<button class="go" onclick="susut(${x.id})">Susutkan</button> <button class="go danger" onclick="disposeA(${x.id})">Disposal</button>`:"—"}</td></tr>`).join("")}</table></div>`;
+ }
+ if(cur==="Proyek"){
+  const projs=await api("/api/projects");
+  A.innerHTML=`<div class="card"><h3>🏗️ Proyek / Job Costing (Accurate Deluxe)</h3>
+   <div class="grid grid-3">
+   <div class="field"><label>Kode (auto)</label><input id="pj_c" placeholder="PRJ-..."></div>
+   <div class="field required"><label>Nama Proyek</label><input id="pj_n" placeholder="Nama proyek"></div>
+   <div class="field"><label>Customer</label><select id="pj_cust">${CUST.map(c=>`<option value="${c.id}">${c.customer_name}</option>`).join("")}</select></div>
+   <div class="field required"><label>Mulai</label><input type="date" id="pj_s" value="${today()}"></div>
+   <div class="field"><label>Selesai (opsional)</label><input type="date" id="pj_e" value=""></div>
+   <div class="field"><label>RAB (budget)</label><input id="pj_b" value="0" type="number"></div>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="savePJ()">Buat Proyek</button></div></div>
+  <div class="card"><h3>Daftar Proyek</h3><table><tr><th>Kode</th><th>Proyek</th><th>Customer</th><th>RAB</th><th>Biaya</th><th>Tagihan</th><th>Laba</th><th>Status</th><th>Aksi</th></tr>
+  ${projs.map(p=>`<tr><td>${p.project_code}</td><td>${esc(p.project_name)}</td><td>${esc(p.customer_name||"-")}</td><td>${fmt(p.budget||0)}</td><td>${fmt(p.total_cost||0)}</td><td>${fmt(p.total_bill||0)}</td><td>${fmt(p.profit||0)}</td><td>${st(p.status)}</td><td>${p.status!=="CLOSED"?`<button class="go" onclick="pjMaterial(${p.id})">Material</button> <button class="go" onclick="pjCost(${p.id})">Biaya</button> <button class="go" onclick="pjBill(${p.id})">Tagih</button> <button class="go danger" onclick="pjEnd(${p.id})">Tutup</button>`:"—"}</td></tr>`).join("")}</table></div>`;
  }
  if(cur==="Budgeting"){
  const now=new Date();
@@ -1039,6 +1143,8 @@ if(cur==="Laporan"){
   <div class="card" style="cursor:pointer" onclick="loadReport('piutang')"><h3>💰 Aging Piutang</h3><p>Umur piutang pelanggan</p></div>
   <div class="card" style="cursor:pointer" onclick="loadReport('hutang')"><h3>💳 Aging Hutang</h3><p>Umur hutang vendor</p></div>
   <div class="card" style="cursor:pointer" onclick="loadReport('buku_besar')"><h3>📒 Buku Besar</h3><p>Mutasi per akun</p></div>
+  <div class="card" style="cursor:pointer" onclick="loadReport('bank_book')"><h3>🏦 Buku Bank</h3><p>Mutasi kas/bank + saldo berjalan</p></div>
+  <div class="card"><h3>🧾 E-Faktur CSV</h3><p>Ekspor jual+beli per bulan</p><div class="row"><input type="month" id="ef_m" value="${curYear}-${String(curMonth).padStart(2,"0")}"><button class="go" onclick="dlEfaktur()">Unduh</button></div></div>
  </div>
  <div class="card" id="reportOutput">
   <h3>Pilih laporan di atas untuk menampilkan hasil</h3>
@@ -1054,7 +1160,7 @@ if(cur==="Laporan"){
   window._stkCache=stk;
   const valOf=c=>stk.filter(s=>s.item_code===c).reduce((a,s)=>a+s.value,0);
   const methOf=c=>{const s=stk.find(s=>s.item_code===c);return s?s.method:"AVERAGE";};
-  if(ME.role!=="KASIR"){try{logs=await api("/api/activity");}catch(e){}
+   if(ME.role!=="KASIR"){try{logs=await api("/api/activity");window._logs=logs;}catch(e){}
    if(ME.role==="ADMIN"){try{users=await api("/api/users");}catch(e){}}}
 
   if(curDetail==="customer")return A.innerHTML=renderCustomerDetail(curDetailId);
@@ -1169,7 +1275,9 @@ if(cur==="Laporan"){
    </div>
    <div class="row" style="margin-top:12px"><button class="go" onclick="saveNU()">Tambah User</button></div></div>
    <div class="card" style="cursor:pointer" onclick="loadSistem('currency')"><h3>💱 Mata Uang</h3><p>Konfigurasi mata uang & kurs</p></div>`:""}
-   ${ME.role!=="KASIR"?`<div class="card"><h3>Log Aktivitas</h3><table><tr><th>Waktu</th><th>User</th><th>Aksi</th></tr>${logs.slice(0,50).map(l=>`<tr><td>${esc(l.created_at||"")}</td><td>${esc(l.username)}</td><td>${esc(l.action)}</td></tr>`).join("")}</table></div>`:""}`;
+    ${ME.role!=="KASIR"?`<div class="card"><h3>Log Aktivitas (audit trail)</h3>
+    <div class="row"><button class="go" onclick="loadLogs('all')">Semua</button><button class="go" onclick="loadLogs('ok')">Sukses</button><button class="go danger" onclick="loadLogs('fail')">Gagal ≥400</button></div>
+    <div id="log_list"><table><tr><th>Waktu</th><th>User</th><th>Aksi</th><th>Status</th><th></th></tr>${logs.slice(0,50).map((l,ix)=>`<tr><td>${esc(l.created_at||"")}</td><td>${esc(l.username)}</td><td>${esc(l.action)}</td><td>${l.status>=400?`<span class="bdg b-VOID">${l.status}</span>`:(l.status||200)}</td><td><button class="go" onclick='viewLog(${ix})'>Detail</button></td></tr>`).join("")}</table></div></div>`:""}`;
   }
   else{
    A.innerHTML=`<div class="card"><h3>Master Data</h3><p class="mut">Pilih sub-menu di panel kiri untuk mengelola data master.</p></div>`;
@@ -1291,16 +1399,18 @@ window.saveVN=async()=>{
  showLoading("#app button.go","Menyimpan...");
  await api("/api/vendors",{method:"POST",body:JSON.stringify({vendor_code:$("#vn_c").value,vendor_name:$("#vn_n").value,email:$("#vn_e").value,payable_account_id:+$("#vn_a").value,currency_code:$("#vn_curr").value})});
  showToast("Berhasil","Vendor tersimpan","success");loadM().then(render);}catch(e){showToast("Error",e.message,"error")}finally{hideLoading("#app button.go");}};
-window.closeDoc=async(url,id)=>{try{await api(url,{method:"POST",body:JSON.stringify({id})});render();}catch(e){alert(e.message)}};
+window.closeDoc=async(url,id)=>{if(!await confirmModal("Tutup (Close) dokumen ini? Tidak bisa dipakai untuk transaksi lanjutan."))return;try{await api(url,{method:"POST",body:JSON.stringify({id})});render();}catch(e){alert(e.message)}};
+window.delDoc=async(url,id)=>{if(!await confirmModal("HAPUS dokumen ini permanen? Hanya bisa bila belum diproses."))return;try{await api(url,{method:"POST",body:JSON.stringify({id})});render();}catch(e){alert(e.message)}};
+window.mkInv=doId=>{window._preDO=doId;window._psub="invoice";render();setTimeout(()=>{if($("#s_do")){$("#s_do").value=doId;siDO();}},300);};
 window.addQ=()=>{const id=+$("#q_item").value;const[uc,cv]=$("#q_unit").value.split("|");_ql.push({item_id:id,qty:+$("#q_qty").value,price:+$("#q_price").value,description:$("#q_desc").value,unit_code:uc,unit_conv:+cv});$("#qlines").innerHTML=_ql.map(x=>`<div>${x.qty} ${x.unit_code} item#${x.item_id} ${x.description||""}</div>`).join("");};
 window.saveQ=async()=>{
  try{showLoading("#app button.go","Menyimpan...");
- const r=await api("/api/quotations",{method:"POST",body:JSON.stringify({customer_id:+$("#q_cust").value,date:$("#q_date").value,tax_rate:+$("#q_tax").value,lines:_ql})});
+  const r=await api("/api/quotations",{method:"POST",body:JSON.stringify({customer_id:+$("#q_cust").value,date:$("#q_date").value,tax_rate:+$("#q_tax").value,valid_until:$("#q_valid").value,lines:_ql})});
  alert("Penawaran "+r.quotation);render();}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
 window.copySQ=()=>{const q=_sq.find(x=>x.id==$("#o_sq").value);if(!q)return;await_api_copy(q);};
 async function await_api_copy(q){const full=(await api("/api/quotations")).find(x=>x.id===q.id);full.lines.forEach(l=>gridAdd('oo',{item_id:l.item_id,wh:l.warehouse_id,qty:l.unit_qty||l.quantity,price:l.unit_price,d1:l.discount_pct||0,d2:l.discount_pct2||0,unit:(l.unit_code||"PCS")+"|"+(l.unit_conv||1)}));$("#o_sq").value="";}
 window.saveO=async()=>{
- try{const b={customer_id:+$("#o_cust").value,date:$("#o_date").value,tax_rate:+$("#o_tax").value,lines:gridLines('oo')};
+  try{const b={customer_id:+$("#o_cust").value,date:$("#o_date").value,tax_rate:+$("#o_tax").value,ship_date:$("#o_ship").value,customer_po:$("#o_po").value,lines:gridLines('oo')};
  if(!b.lines.length)return alert("Isi minimal 1 baris");
  showLoading("#app button.go","Menyimpan...");
  if($("#o_sq").value)b.quotation_id=+$("#o_sq").value;
@@ -1311,12 +1421,12 @@ window.doLines=()=>{const s=_so.find(x=>x.id==$("#d_so").value);if(!s){$("#dref"
 window.addDRef=solId=>{const s=_so.find(x=>x.id==$("#d_so").value);const l=s.lines.find(x=>x.id===solId);_dl.push({sales_order_line_id:solId,item_id:l.item_id,warehouse_id:+$("#dw_"+solId).value,qty:+$("#dq_"+solId).value,description:l.description||""});$("#dlines").innerHTML=_dl.map(x=>`<div>SO#${x.sales_order_line_id} ${x.qty} item#${x.item_id}</div>`).join("");};
 window.addD=()=>{const[uc,cv]=$("#d_unit").value.split("|");_dl.push({item_id:+$("#d_item").value,warehouse_id:+$("#d_wh").value,qty:+$("#d_qty").value,unit_code:uc,unit_conv:+cv,description:$("#d_desc").value});$("#dlines").innerHTML=_dl.map(x=>`<div>${x.qty} item#${x.item_id}</div>`).join("");};
 window.saveD=async()=>{
- try{const b={customer_id:+$("#d_cust").value,date:$("#d_date").value,lines:_dl};
+  try{const b={customer_id:+$("#d_cust").value,date:$("#d_date").value,ship_to:$("#d_ship").value,ship_via:$("#d_via").value,lines:_dl};
  showLoading("#app button.go","Menyimpan...");
  if($("#d_so").value)b.sales_order_id=+$("#d_so").value;
  const r=await api("/api/deliveries",{method:"POST",body:JSON.stringify(b)});
  alert("DO "+r.delivery);render();}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
-window.voidD=async id=>{if(!confirm("Void surat jalan ini? Stok kembali & jurnal dibalik."))return;try{await api("/api/deliveries/void",{method:"POST",body:JSON.stringify({id,date:today()})});render();}catch(e){alert(e.message)}};
+window.voidD=async id=>{if(!await confirmModal("Void surat jalan ini? Stok kembali & jurnal dibalik."))return;try{await api("/api/deliveries/void",{method:"POST",body:JSON.stringify({id,date:today()})});render();}catch(e){alert(e.message)}};
 window.siDO=()=>{const d=_dn.find(x=>x.id==$("#s_do").value);if(!d){$("#sref").innerHTML="";return;}
  api("/api/deliveries").then(all=>{const full=all.find(x=>x.id===d.id);
  $("#sref").innerHTML=`<table><tr><th>Barang</th><th>Sisa tagih</th><th>Qty</th><th></th></tr>${full.lines.map(l=>`<tr><td>${l.item_name}</td><td>${l.quantity-l.invoiced_qty}</td><td><input id="sdo_${l.id}" value="${l.quantity-l.invoiced_qty}" style="width:70px"></td><td><button class="go" onclick="addDORef(${l.id})">+</button></td></tr>`).join("")}</table>`;});};
@@ -1330,7 +1440,7 @@ window.copyPR=async()=>{const id=$("#o_pr").value;if(!id)return;const full=(awai
 window.saveO2=async()=>{
  try{const lines=gridLines('og');if(!lines.length)return alert("Isi minimal 1 baris");
  showLoading("#app button.go","Menyimpan...");
- const b={vendor_id:+$("#o_vend").value,date:$("#o_date").value,tax_rate:+$("#o_tax").value,lines};
+  const b={vendor_id:+$("#o_vend").value,date:$("#o_date").value,tax_rate:+$("#o_tax").value,fob:$("#o_fob").value,terms:$("#o_terms").value,ship_via:$("#o_shipp").value,ship_to:$("#o_shipt").value,expected_date:$("#o_exp").value,lines};
  if($("#o_pr").value)b.requisition_id=+$("#o_pr").value;
  const r=await api("/api/purchase-orders",{method:"POST",body:JSON.stringify(b)});
  alert("PO "+r.order);render();}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
@@ -1339,12 +1449,12 @@ window.riLines=()=>{const p=_po.find(x=>x.id==$("#v_po").value);if(!p){$("#vref"
 window.addVRef=polId=>{const p=_po.find(x=>x.id==$("#v_po").value);const l=p.lines.find(x=>x.id===polId);_vl.push({purchase_order_line_id:polId,item_id:l.item_id,warehouse_id:l.warehouse_id,qty:+$("#vq_"+polId).value,price:Math.round(l.unit_price/(l.unit_conv||1))});$("#vlines").innerHTML=_vl.map(x=>`<div>PO#${x.purchase_order_line_id||""} ${x.qty} item#${x.item_id}</div>`).join("");};
 window.addV=()=>{const[uc,cv]=$("#v_unit").value.split("|");_vl.push({item_id:+$("#v_item").value,warehouse_id:+$("#v_wh").value,qty:+$("#v_qty").value,price:+$("#v_price").value,unit_code:uc,unit_conv:+cv,description:$("#v_desc").value});$("#vlines").innerHTML=_vl.map(x=>`<div>${x.qty} item#${x.item_id}</div>`).join("");};
 window.saveV=async()=>{
- try{const b={vendor_id:+$("#v_vend").value,date:$("#v_date").value,lines:_vl};
+  try{const b={vendor_id:+$("#v_vend").value,date:$("#v_date").value,receipt_no:$("#v_receipt").value,ship_via:$("#v_ship").value,lines:_vl};
  showLoading("#app button.go","Menyimpan...");
  if($("#v_po").value)b.purchase_order_id=+$("#v_po").value;
  const r=await api("/api/receives",{method:"POST",body:JSON.stringify(b)});
  alert("Receive "+r.receive);render();}catch(e){alert(e.message)}finally{hideLoading("#app button.go");}};
-window.voidR=async id=>{if(!confirm("Void penerimaan ini? Stok dikurangi & jurnal dibalik."))return;try{await api("/api/receives/void",{method:"POST",body:JSON.stringify({id,date:today()})});render();}catch(e){alert(e.message)}};
+window.voidR=async id=>{if(!await confirmModal("Void penerimaan ini? Stok dikurangi & jurnal dibalik."))return;try{await api("/api/receives/void",{method:"POST",body:JSON.stringify({id,date:today()})});render();}catch(e){alert(e.message)}};
 window.piRI=()=>{const r=_ri.find(x=>x.id==$("#p_ri").value);if(!r){if(!$("#p_po").value)$("#pref").innerHTML="";return;}
  api("/api/receives").then(all=>{const full=all.find(x=>x.id===r.id);
  $("#pref").innerHTML=`<table><tr><th>Barang</th><th>Sisa tagih</th><th>Qty (satuan dasar)</th><th>Harga tagih/satuan dasar</th><th></th></tr>${full.lines.map(l=>`<tr><td>${l.item_name}</td><td>${l.quantity-l.billed_qty}</td><td><input id="pri_${l.id}" value="${l.quantity-l.billed_qty}" style="width:70px"></td><td><input id="prp_${l.id}" value="${Math.round(l.unit_price/(l.unit_conv||1))}" style="width:100px"></td><td><button class="go" onclick="addRIRef(${l.id})">+</button></td></tr>`).join("")}</table>`;});};
@@ -1513,8 +1623,15 @@ async function loadReport(type){
  const out=$("#reportOutput");
  if(!out)return;
  out.innerHTML="<div class='empty-state'>Memuat data...</div>";
- 
+
  try{
+  if(type==='bank_book'){
+   const rows=await api(`/api/bank-book?month=${y}-${String(m).padStart(2,"0")}`);
+   out.innerHTML=`<h3>🏦 Buku Bank - ${months[m-1]} ${y}</h3>
+   <table><thead><tr><th>Tgl</th><th>Jurnal</th><th>Uraian</th><th>Masuk</th><th>Keluar</th><th>Saldo</th></tr></thead><tbody>
+   ${rows.map(r=>`<tr><td>${r.transaction_date}</td><td>${esc(r.journal_number)}</td><td>${esc(r.description||"")}</td><td>${fmt(r.debit)}</td><td>${fmt(r.credit)}</td><td>${fmt(r.saldo)}</td></tr>`).join("")||'<tr><td colspan="6">Kosong</td></tr>'}</tbody></table>`;
+   return;
+  }
   if(type==='penjualan'){
    const sales=await api("/api/sales");
    const filtered=sales.filter(x=>{const d=new Date(x.transaction_date);return d.getMonth()+1===m&&d.getFullYear()===y;});
@@ -1627,75 +1744,25 @@ async function loadReport(type){
 }
 async function loadBudget(){
  const y=+$("#bud_year").value;
- const m=+$("#bud_month").value;
  const out=$("#budgetOutput");
  if(!out)return;
- 
  try{
-  const accounts=[
-   {code:"4001",name:"Penjualan Produk",type:"income",budget:50000000},
-   {code:"4002",name:"Penjualan Jasa",type:"income",budget:20000000},
-   {code:"5001",name:"HPP",type:"expense",budget:30000000},
-   {code:"5002",name:"Gaji Karyawan",type:"expense",budget:15000000},
-   {code:"5003",name:"Sewa Tempat",type:"expense",budget:5000000},
-   {code:"5004",name:"Listrik & Air",type:"expense",budget:3000000},
-   {code:"5005",name:"Marketing",type:"expense",budget:7000000},
-   {code:"5006",name:"Perlengkapan",type:"expense",budget:2000000}
-  ];
-  
-  const sales=await api("/api/sales");
-  const purchases=await api("/api/purchases");
-  
-  const filtered=sales.filter(x=>{
-   const d=new Date(x.transaction_date);
-   return d.getFullYear()===y&&(m===0||d.getMonth()+1===m);
-  });
-  
-  const totalSales=filtered.reduce((a,x)=>a+x.total_amount,0);
-  const totalPurchases=purchases.filter(x=>{
-   const d=new Date(x.transaction_date);
-   return d.getFullYear()===y&&(m===0||d.getMonth()+1===m);
-  }).reduce((a,x)=>a+x.total_amount,0);
-  
-  out.innerHTML=`<h3>💰 Anggaran ${y} ${m>0?"- "+["","Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"][m]:""}</h3>
-   <div class="kpi-row">
-    <div class="kpi success"><label>Target Penjualan</label><b>${fmt(accounts.filter(a=>a.type==="income").reduce((a,x)=>a+x.budget,0))}</b></div>
-    <div class="kpi" style="background:${totalSales>=accounts.filter(a=>a.type==="income").reduce((a,x)=>a+x.budget,0)?'var(--ok)':'var(--bad)'}"><label>Realisasi Penjualan</label><b>${fmt(totalSales)}</b></div>
-    <div class="kpi warning"><label>Target Beban</label><b>${fmt(accounts.filter(a=>a.type==="expense").reduce((a,x)=>a+x.budget,0))}</b></div>
-    <div class="kpi" style="background:${totalPurchases<=accounts.filter(a=>a.type==="expense").reduce((a,x)=>a+x.budget,0)?'var(--ok)':'var(--bad)'}"><label>Realisasi Beban</label><b>${fmt(totalPurchases)}</b></div>
-   </div>
-   <table style="margin-top:24px">
-    <thead><tr><th>Akun</th><th>Jenis</th><th>Anggaran</th><th>Realisasi</th><th>Selisih</th><th>% Capai</th><th>Status</th></tr></thead>
-    <tbody>
-     ${accounts.map(a=>{
-      const actual=a.type==="income"?(a.code.startsWith("4")?totalSales:0):(a.code.startsWith("5")?totalPurchases:0);
-      const diff=a.budget-actual;
-      const pct=a.budget>0?((actual/a.budget)*100).toFixed(1):0;
-      const status=Math.abs(diff)<a.budget*0.1?"✅":"⚠️";
-      return `<tr>
-       <td><b>${a.code}</b> ${a.name}</td>
-       <td>${a.type==="income"?"Pendapatan":"Beban"}</td>
-       <td>${fmt(a.budget)}</td>
-       <td>${fmt(actual)}</td>
-       <td style="color:${diff>=0?'var(--ok)':'var(--bad)'}">${fmt(diff)}</td>
-       <td>${pct}%</td>
-       <td>${status}</td>
-      </tr>`;
-     }).join("")}
-    </tbody>
-    <tfoot>
-     <tr style="font-weight:bold;background:var(--card)">
-      <td colspan="2">TOTAL</td>
-      <td>${fmt(accounts.reduce((a,x)=>a+x.budget,0))}</td>
-      <td>${fmt(totalSales+totalPurchases)}</td>
-      <td style="color:${accounts.reduce((a,x)=>a+x.budget,0)-(totalSales+totalPurchases)>=0?'var(--ok)':'var(--bad)'}">${fmt(accounts.reduce((a,x)=>a+x.budget,0)-(totalSales+totalPurchases))}</td>
-      <td>${((totalSales+totalPurchases)/accounts.reduce((a,x)=>a+x.budget,0)*100).toFixed(1)}%</td>
-      <td></td>
-     </tr>
-    </tfoot>
-   </table>`;
+  const b=await api("/api/budgets?year="+y);
+  const rows=b.rows||[];
+  const totB=rows.reduce((a,x)=>a+(+x.amount||0),0),totR=rows.reduce((a,x)=>a+(+x.realisasi||0),0);
+  out.innerHTML=`<h3>💰 Anggaran ${y} vs Realisasi</h3>
+   <div class="kpi-row"><div class="kpi"><label>Total Anggaran</label><b>${fmt(totB)}</b></div>
+   <div class="kpi" style="background:${totR>=totB?'var(--ok)':'var(--bad)'}"><label>Realisasi</label><b>${fmt(totR)}</b></div></div>
+   <table style="margin-top:16px"><thead><tr><th>Akun</th><th>Bulan</th><th>Anggaran</th><th>Realisasi</th><th>Selisih</th></tr></thead><tbody>
+   ${rows.map(x=>`<tr><td>${esc(x.account_code)} ${esc(x.account_name)}</td><td>${x.month==="00"?"Tahunan":x.month}</td><td>${fmt(x.amount)}</td><td>${fmt(x.realisasi)}</td><td>${fmt((+x.amount||0)-(+x.realisasi||0))}</td></tr>`).join("")||'<tr><td colspan="5">Belum ada anggaran — tambah di bawah.</td></tr>'}</tbody></table>
+   <div class="grid grid-3" style="margin-top:16px">
+   <div class="field required"><label>Akun</label><select id="bg_a">${COA.map(c=>`<option value="${c.id}">${c.account_code} ${c.account_name}</option>`).join("")}</select></div>
+   <div class="field"><label>Bulan (00=tahunan)</label><input id="bg_m" value="00" style="width:70px"></div>
+   <div class="field"><label>Nominal</label><input id="bg_amt" value="0" type="number"></div></div>
+   <div class="row" style="margin-top:12px"><button class="go" onclick="saveBudget()">Simpan Anggaran</button></div>`;
  }catch(e){out.innerHTML=`<div class="card">❌ Error: ${e.message}</div>`;}
 }
+window.saveBudget=async()=>{try{await api("/api/budgets",{method:"POST",body:JSON.stringify({account_id:+$("#bg_a").value,year:$("#bud_year").value,month:$("#bg_m").value||"00",amount:+$("#bg_amt").value})});loadBudget();}catch(e){alert(e.message)}};
 function exportBudget(){
  const y=$("#bud_year").value;
  const m=$("#bud_month").value;
@@ -1708,6 +1775,7 @@ function exportBudget(){
  win.document.close();
  setTimeout(()=>win.print(),300);
 }
+window.dlEfaktur=()=>{const m=$("#ef_m").value;window.open(`/api/reports/efaktur?month=${m}&token=${tok()}`,"_blank");};
 window.csvTB=async()=>{const tb=await api("/api/reports/trial-balance");csv("trial-balance.csv",[["Kode","Akun","Tipe","Debit","Kredit"],...tb.map(r=>[r.account_code,r.account_name,r.account_type,r.d,r.k])]);};
 window.csvStock=async()=>{const s=await api("/api/stock");csv("stok.csv",[["Kode","Barang","Gudang","Stok","AvgCost","Nilai"],...s.map(x=>[x.item_code,x.item_name,x.warehouse,x.stock,x.avg_cost,x.value])]);};
 window.saveU=async()=>{try{await api("/api/units",{method:"POST",body:JSON.stringify({item_id:+$("#u_item").value,unit_code:$("#u_code").value,conversion:+$("#u_conv").value})});loadM().then(render);}catch(e){alert(e.message)}};
@@ -1722,7 +1790,7 @@ window.savePay=async()=>{
  showLoading("#app button.go","Menyimpan...");
  const rate=+$("#k_rate").value||1;
  const curr=(($("#k_kind").value==="AR"?CUST:VEND).find(c=>c.id===+$("#k_c").value)?.currency_code||"IDR");
- await api("/api/payments",{method:"POST",body:JSON.stringify({kind:$("#k_kind").value,cash_account_id:+$("#k_cash").value,contact_id:+$("#k_c").value,amount:tot,date:$("#k_date").value,note:$("#k_note").value,allocations:_al,currency:curr,exchange_rate:rate})});
+ await api("/api/payments",{method:"POST",body:JSON.stringify({kind:$("#k_kind").value,cash_account_id:+$("#k_cash").value,contact_id:+$("#k_c").value,amount:tot,date:$("#k_date").value,note:$("#k_note").value,allocations:_al,currency:curr,exchange_rate:rate,pph23_no:$("#k_pph23").value,pph23_amount:Math.round(+$("#k_pph23amt").value||0)})});
  showToast("Berhasil","Pembayaran "+formatCurrency(tot,curr)+" tercatat","success");render();}catch(e){showToast("Error",e.message,"error")}finally{hideLoading("#app button.go");}};
 window.kindCh=()=>{const k=$("#k_kind").value;const cs=k==="AR"?CUST:VEND;const nm=k==="AR"?"customer_name":"vendor_name";
  $("#k_c").innerHTML=cs.map(c=>`<option value="${c.id}">${c[nm]}</option>`).join("");
@@ -1737,8 +1805,8 @@ window.addAlloc=()=>{const id=+$("#k_inv").value;if(!id)return alert("Tidak ada 
  $("#alocs").innerHTML=_al.map((a,i)=>{const ag=$("#k_kind").value==="AR"?_ag:_agAP;const x=ag.find(v=>v.id===a.invoice_id);return `<div>${x?x.invoice_number:"#"+a.invoice_id} — ${fmt(a.amount)} <a href="#" onclick="_al.splice(${i},1);addAllocRefresh();return false">hapus</a></div>`;}).join("")+`<b>Total: ${fmt(_al.reduce((a,x)=>a+x.amount,0))}</b>`;};
 window.addAllocRefresh=()=>{const t=_al;_al=[];const keep=$("#k_alloc").value;$("#alocs").innerHTML="";t.forEach(a=>{const ag=$("#k_kind").value==="AR"?_ag:_agAP;if(ag.find(v=>v.id===a.invoice_id))_al.push(a);});$("#k_alloc").value=keep;
  $("#alocs").innerHTML=_al.map((a,i)=>`<div>#${a.invoice_id} — ${fmt(a.amount)} <a href="#" onclick="_al.splice(${i},1);addAllocRefresh();return false">hapus</a></div>`).join("")+(_al.length?`<b>Total: ${fmt(_al.reduce((a,x)=>a+x.amount,0))}</b>`:"");};
-window.voidSale=async id=>{if(!confirm("Void invoice ini? Jurnal dibalik & stok dikembalikan."))return;try{const r=await api("/api/sales/void",{method:"POST",body:JSON.stringify({id,date:today()})});alert(r.need_approval?"Diajukan, menunggu MANAGER": "Invoice di-void");render();}catch(e){alert(e.message)}};
-window.voidBuy=async id=>{if(!confirm("Void tagihan ini? Jurnal dibalik & stok dikurangi."))return;try{const r=await api("/api/purchases/void",{method:"POST",body:JSON.stringify({id,date:today()})});alert(r.need_approval?"Diajukan, menunggu MANAGER":"Tagihan di-void");render();}catch(e){alert(e.message)}};
+window.voidSale=async id=>{if(!await confirmModal("Void invoice ini? Jurnal dibalik & stok dikembalikan."))return;try{const r=await api("/api/sales/void",{method:"POST",body:JSON.stringify({id,date:today()})});alert(r.need_approval?"Diajukan, menunggu MANAGER": "Invoice di-void");render();}catch(e){alert(e.message)}};
+window.voidBuy=async id=>{if(!await confirmModal("Void tagihan ini? Jurnal dibalik & stok dikurangi."))return;try{const r=await api("/api/purchases/void",{method:"POST",body:JSON.stringify({id,date:today()})});alert(r.need_approval?"Diajukan, menunggu MANAGER":"Tagihan di-void");render();}catch(e){alert(e.message)}};
 let cnCLines=[];
 function addCNLine(){
  const item_id=+$("#cn_it").value||null;
@@ -1800,7 +1868,12 @@ window.createDNFromInvoice=async(invId)=>{
  alert("Data invoice "+inv.invoice_number+" dimuat. Simpan Debit Note.");}catch(e){alert(e.message);}
 };
 window.opname=async()=>{try{const r=await api("/api/stock/opname",{method:"POST",body:JSON.stringify({item_id:+$("#o_item").value,warehouse_id:+$("#o_wh").value,actual_qty:+$("#o_qty").value,date:$("#o_date").value})});alert("Selisih "+r.diff+" ("+fmt(r.value)+")");loadM().then(render);}catch(e){alert(e.message)}};
-window.transfer=async()=>{try{await api("/api/stock/transfer",{method:"POST",body:JSON.stringify({item_id:+$("#t_item").value,from_warehouse:+$("#t_from").value,to_warehouse:+$("#t_to").value,qty:+$("#t_qty").value,date:$("#t_date").value})});alert("Stok dipindahkan");loadM().then(render);}catch(e){alert(e.message)}};
+window.transfer=async()=>{try{await api("/api/stock/transfer",{method:"POST",body:JSON.stringify({item_id:+$("#t_item").value,from_warehouse:+$("#t_from").value,to_warehouse:+$("#t_to").value,qty:+$("#t_qty").value,date:$("#t_date").value,note:$("#t_note").value,ship_cost:Math.round(+$("#t_ship").value||0),cash_account_id:+$("#t_cash").value,ship_cost_account_id:+$("#t_exp").value})});alert("Stok dipindahkan");loadM().then(render);}catch(e){alert(e.message)}};
+window.saveCat=async()=>{try{await api("/api/categories",{method:"POST",body:JSON.stringify({category_name:$("#ct_n").value})});alert("Kategori tersimpan");render();}catch(e){alert(e.message)}};
+window.saveGrp=async()=>{try{await api("/api/groups",{method:"POST",body:JSON.stringify({group_name:$("#gr_n").value})});alert("Grup tersimpan");render();}catch(e){alert(e.message)}};
+window.setPriceOne=async(id)=>{try{await api("/api/items/set-price",{method:"POST",body:JSON.stringify({lines:[{item_id:id,sales_price:+$("#sp_"+id).value}]})});await loadM();alert("Harga diperbarui");}catch(e){alert(e.message)}};
+window.importItems=async()=>{const f=$("#imp_f").files[0];if(!f)return alert("Pilih file CSV dulu");
+ const t=await f.text();try{const r=await api("/api/import/items",{method:"POST",body:JSON.stringify({csv:t})});await loadM();alert(`Import: ${r.imported} barang${r.errors.length?("\nGagal:\n"+r.errors.join("\n")):""}`);render();}catch(e){alert(e.message)}};
 let saLines=[];
 function addSALine(){
  const item_id=+$("#sa_it").value;
@@ -1850,13 +1923,36 @@ window.saveJ=async()=>{
  await api("/api/journals",{method:"POST",body:JSON.stringify({transaction_date:$("#j_d").value,description:$("#j_desc").value,lines:_jl})});
  showToast("Berhasil","Jurnal posted","success");render();}catch(e){showToast("Error",e.message,"error")}finally{hideLoading("#app button.go");}};
 window.card=async()=>{const r=await api("/api/stock-card?item_id="+$("#sc").value);$("#card").innerHTML=`<table><tr><th>Tgl</th><th>Ref</th><th>In</th><th>Out</th><th>HPP</th></tr>${r.map(x=>`<tr><td>${x.transaction_date}</td><td>${x.reference_type}</td><td>${x.qty_in}</td><td>${x.qty_out}</td><td>${fmt(x.cogs_unit_price)}</td></tr>`).join("")}</table>`;};
-window.saveA=async()=>{await api("/api/assets",{method:"POST",body:JSON.stringify({asset_code:$("#a_c").value,asset_name:$("#a_n").value,purchase_date:$("#a_d").value,cost:Math.round(+$("#a_cost").value),useful_months:+$("#a_u").value})});render();};
+window.saveA=async()=>{await api("/api/assets",{method:"POST",body:JSON.stringify({asset_code:$("#a_c").value,asset_name:$("#a_n").value,purchase_date:$("#a_d").value,cost:Math.round(+$("#a_cost").value),useful_months:+$("#a_u").value,type_id:+$("#a_t").value||null})});render();};
+window.susutMonthly=async()=>{if(!await confirmModal("Susutkan SEMUA aset aktif bulan ini?"))return;try{const r=await api("/api/assets/dispose-monthly",{method:"POST",body:JSON.stringify({date:today()})});alert(`${r.assets} aset disusutkan, total ${fmt(r.total)}`);render();}catch(e){alert(e.message)}};
+window.saveAT=async()=>{try{await api("/api/asset-types",{method:"POST",body:JSON.stringify({type_code:$("#at_c").value,type_name:$("#at_n").value,useful_months:+$("#at_u").value,fiscal_group:$("#at_f").value})});render();}catch(e){alert(e.message)}};
 window.susut=async id=>{const r=await api("/api/assets/depreciate",{method:"POST",body:JSON.stringify({id,date:today()})});alert("Disusutkan "+fmt(r.amount));render();};
 window.disposeA=async id=>{const p=prompt("Harga jual/disposal Rp (0=hapus):","0");if(p===null)return;try{const r=await api("/api/assets/dispose",{method:"POST",body:JSON.stringify({id,sale_price:Math.round(+p||0),date:today()})});alert("Aset di-disposal, jurnal #"+r.journal);render();}catch(e){alert(e.message)}};
 window.saveTX=async()=>{try{await api("/api/taxes",{method:"POST",body:JSON.stringify({tax_code:$("#tx_c").value,tax_name:$("#tx_n").value,rate:+$("#tx_r").value})});await loadM();render();}catch(e){alert(e.message)}};
 window.loadTaxAp=async()=>{try{const t=TAX.length?TAX:await api("/api/taxes");if($("#tax_list"))$("#tax_list").innerHTML=`<table><tr><th>Kode</th><th>Nama</th><th>Tarif</th></tr>${t.map(x=>`<tr><td>${esc(x.tax_code)}</td><td>${esc(x.tax_name)}</td><td>${esc(x.rate)}%</td></tr>`).join("")}</table>`;}catch(e){if($("#tax_list"))$("#tax_list").textContent=e.message;}
  try{const a=await api("/api/approvals");if($("#ap_list"))$("#ap_list").innerHTML=a.length?a.map(x=>`<div>${esc(x.kind)} ${esc(x.ref_type)}#${x.ref_id} ${fmt(x.amount)} oleh ${esc(x.requested_by)} [${esc(x.status)}] ${x.status==="PENDING"?`<button class="go ok" onclick="decAp(${x.id},1)">Setujui</button> <button class="go danger" onclick="decAp(${x.id},0)">Tolak</button>`:""}</div>`).join(""):"Tidak ada pengajuan.";}catch(e){if($("#ap_list"))$("#ap_list").textContent="—";}};
-window.decAp=async(id,ok)=>{try{await api("/api/approvals/decide",{method:"POST",body:JSON.stringify({id,approve:!!ok})});alert(ok?"Disetujui (eksekusi void manual oleh manager)":"Ditolak");render();}catch(e){alert(e.message)}};
+window.decAp=async(id,ok)=>{if(!ok&&!await confirmModal("Tolak pengajuan ini?"))return;try{const r=await api("/api/approvals/decide",{method:"POST",body:JSON.stringify({id,approve:!!ok})});alert(ok?("Disetujui & dieksekusi: "+(r.executed?JSON.stringify(r.executed):"ok")):"Ditolak");render();}catch(e){alert(e.message)}};
+window.rmaLines=()=>{const id=+$("#rma_inv").value;const si=window._rma_invs.find(x=>x.id===id);if(!si)return;
+ $("#rma_ref").innerHTML=`<table><tr><th>Barang</th><th>Sisa</th><th>Qty RMA</th><th>Kondisi</th><th></th></tr>${si.lines.map(l=>`<tr><td>${l.item_name}</td><td>${l.quantity}</td><td><input id="rmaq_${l.id}" value="${l.quantity}" style="width:60px"></td><td><select id="rmac_${l.id}"><option>RUSAK</option><option>CACAT</option><option>SALAH_KIRIM</option></select></td><td><button class="go" onclick="addRMALine(${l.id},${l.item_id})">+</button></td></tr>`).join("")}</table>`;};
+window.addRMALine=(lid,item_id)=>{window._rmal.push({item_id,warehouse_id:WH[0].id,qty:+$("#rmaq_"+lid).value,condition:$("#rmac_"+lid).value});
+ $("#rma_lines_preview").innerHTML=window._rmal.map(x=>`<div>item#${x.item_id} qty ${x.qty} (${x.condition})</div>`).join("");};
+window.saveRMA=async()=>{try{const r=await api("/api/rmas",{method:"POST",body:JSON.stringify({sales_invoice_id:+$("#rma_inv").value,date:$("#rma_date").value,complaint:$("#rma_complaint").value,lines:window._rmal})});alert("RMA "+r.rma+" dibuat");render();}catch(e){alert(e.message)}};
+window.rmaDecide=async(id,ok)=>{try{await api("/api/rmas/decide",{method:"POST",body:JSON.stringify({id,approve:!!ok})});render();}catch(e){alert(e.message)}};
+window.rmaRepair=async id=>{try{await api("/api/rmas/action",{method:"POST",body:JSON.stringify({rma_id:id,action:"REPAIR",date:today(),note:"Perbaikan"})});render();}catch(e){alert(e.message)}};
+window.rmaReplace=async id=>{if(!await confirmModal("Kirim barang pengganti (buat Surat Jalan + stok keluar)?"))return;try{const r=await api("/api/rmas/action",{method:"POST",body:JSON.stringify({rma_id:id,action:"REPLACE",date:today()})});alert("DO pengganti "+r.delivery);render();}catch(e){alert(e.message)}};
+window.rmaRefund=async id=>{if(!await confirmModal("Refund (buat Retur Penjualan + potong piutang)?"))return;try{const r=await api("/api/rmas/action",{method:"POST",body:JSON.stringify({rma_id:id,action:"REFUND",date:today()})});alert("Retur "+r.return);render();}catch(e){alert(e.message)}};
+window.savePJ=async()=>{try{const r=await api("/api/projects",{method:"POST",body:JSON.stringify({project_code:$("#pj_c").value,project_name:$("#pj_n").value,customer_id:+$("#pj_cust").value,start_date:$("#pj_s").value,end_date:$("#pj_e").value,budget:Math.round(+$("#pj_b").value||0)})});alert("Proyek "+r.project);render();}catch(e){alert(e.message)}};
+window.pjMaterial=async id=>{openModal(`<h3>Material In Used — Proyek #${id}</h3><div class="grid grid-2"><div class="field"><label>Barang</label><select id="pjm_it">${ITEMS.filter(i=>i.item_type==="INVENTORY").map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select></div><div class="field"><label>Gudang</label><select id="pjm_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></div><div class="field"><label>Qty</label><input id="pjm_q" value="1"></div></div><button class="go" onclick="pjMaterialGo(${id})">Keluarkan Material</button><button class="go" onclick="closeModal()">Batal</button>`);};
+window.pjMaterialGo=async id=>{try{const r=await api("/api/projects/material",{method:"POST",body:JSON.stringify({project_id:id,item_id:+$("#pjm_it").value,warehouse_id:+$("#pjm_wh").value,qty:+$("#pjm_q").value,date:today()})});closeModal();alert("Material dikeluarkan: "+fmt(r.cost));render();}catch(e){alert(e.message)}};
+window.pjCost=async id=>{openModal(`<h3>Tambah Biaya — Proyek #${id}</h3><div class="grid grid-2"><div class="field"><label>Jenis</label><select id="pjc_k"><option>LABOR</option><option>OVERHEAD</option></select></div><div class="field"><label>Nominal</label><input id="pjc_a" value="0" type="number"></div><div class="field"><label>Kas</label><select id="pjc_cash">${COA.filter(c=>c.account_code.startsWith("110")).map(c=>`<option value="${c.id}">${c.account_code}</option>`).join("")}</select></div></div><button class="go" onclick="pjCostGo(${id})">Simpan Biaya</button><button class="go" onclick="closeModal()">Batal</button>`);};
+window.pjCostGo=async id=>{try{await api("/api/projects/cost",{method:"POST",body:JSON.stringify({project_id:id,kind:$("#pjc_k").value,amount:Math.round(+$("#pjc_a").value||0),cash_account_id:+$("#pjc_cash").value,date:today()})});closeModal();render();}catch(e){alert(e.message)}};
+window.pjBill=async id=>{openModal(`<h3>Tagih Proyek #${id}</h3><div class="field"><label>Nominal</label><input id="pjb_a" value="0" type="number"></div><button class="go" onclick="pjBillGo(${id})">Buat Invoice</button><button class="go" onclick="closeModal()">Batal</button>`);};
+window.pjBillGo=async id=>{try{const r=await api("/api/projects/bill",{method:"POST",body:JSON.stringify({project_id:id,amount:Math.round(+$("#pjb_a").value||0),date:today()})});closeModal();alert("Invoice "+r.invoice);render();}catch(e){alert(e.message)}};
+window.pjEnd=async id=>{if(!await confirmModal("Tutup proyek ini? Akui biaya ke COGS & laba/rugi."))return;try{const r=await api("/api/projects/ending",{method:"POST",body:JSON.stringify({project_id:id,date:today()})});alert("Proyek ditutup. Laba: "+fmt(r.profit));render();}catch(e){alert(e.message)}};
+window.loadLogs=async(f)=>{try{const l=await api("/api/activity?status="+f);window._logs=l;
+ $("#log_list").innerHTML=`<table><tr><th>Waktu</th><th>User</th><th>Aksi</th><th>Status</th><th></th></tr>${l.slice(0,100).map((x,ix)=>`<tr><td>${esc(x.created_at||"")}</td><td>${esc(x.username)}</td><td>${esc(x.action)}</td><td>${x.status>=400?`<span class="bdg b-VOID">${x.status}</span>`:(x.status||200)}</td><td><button class="go" onclick='viewLog(${ix})'>Detail</button></td></tr>`).join("")}</table>`;}catch(e){alert(e.message)}};
+window.viewLog=ix=>{const l=(window._logs||[])[ix];if(!l)return alert("Data tidak ditemukan");
+ alert(`[${l.created_at}] ${l.username}\n${l.method||""} ${l.path||l.action} → ${l.status||""}\nRef: ${l.ref_type||""} ${l.ref_id||""}\nDetail: ${l.detail||"-"}\nBefore: ${(l.before_json||"-").slice(0,500)}\nAfter: ${(l.after_json||"-").slice(0,500)}`);};
 window.calcPPh=async()=>{try{const r=await api("/api/payroll/calc",{method:"POST",body:JSON.stringify({gross:Math.round(+$("#pr_g").value||0)})});$("#pr_out").textContent=`Bruto ${fmt(r.gross)} TER ${(r.rate*100).toFixed(2)}% → PPh ${fmt(r.pph21)} Net ${fmt(r.net)}`;}catch(e){alert(e.message)}};
 window.saveCOA=async()=>{await api("/api/coa",{method:"POST",body:JSON.stringify({account_code:$("#c_c").value,account_name:$("#c_n").value,account_type:$("#c_t").value})});loadM().then(render);};
 window.saveW=async()=>{await api("/api/webhooks",{method:"POST",body:JSON.stringify({event:$("#w_e").value,url:$("#w_u").value})});render();};

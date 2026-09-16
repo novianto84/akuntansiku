@@ -9,7 +9,7 @@ Engine inti: Double-Entry (setiap jurnal wajib Debit == Kredit), auto-posting
   - Payment         -> Dr Kas/Bank / Cr Piutang  ATAU  Dr Utang / Cr Kas
   - Inventory       -> Moving Average, stok = SUM(in)-SUM(out)
 """
-import json, sqlite3, os, datetime, secrets, hashlib
+import json, sqlite3, os, datetime, secrets, hashlib, urllib.request, csv, io
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -290,6 +290,8 @@ def init_db():
         "ALTER TABLE warehouses ADD COLUMN branch_id INTEGER NULL",
         "ALTER TABLE items ADD COLUMN cost_method TEXT DEFAULT 'AVERAGE'",
         "ALTER TABLE sales_invoice_lines ADD COLUMN sales_order_line_id INTEGER NULL",
+        "ALTER TABLE sales_invoice_lines ADD COLUMN delivery_order_line_id INTEGER NULL",
+        "ALTER TABLE delivery_order_lines ADD COLUMN discount_amount REAL DEFAULT 0",
         "ALTER TABLE sales_invoices ADD COLUMN sales_order_id INTEGER NULL",
         "ALTER TABLE sales_invoices ADD COLUMN delivery_order_id INTEGER NULL",
         "ALTER TABLE purchase_invoice_lines ADD COLUMN purchase_order_line_id INTEGER NULL",
@@ -335,7 +337,7 @@ def init_db():
             c.execute(f"ALTER TABLE {tbl}_new RENAME TO {tbl}")
             c.execute("PRAGMA foreign_keys=ON")
     c.commit()
-    for code, name, typ in [("64002","Beban Komisi Penjualan","EXPENSE"),("23002","Utang Komisi","LIABILITY"),("22002","Utang PPh 21","LIABILITY"),("13002","Barang Dalam Perjalanan","ASSET"),("21201","Uang Muka Penjualan","LIABILITY"),("12002","Uang Muka Pembelian","ASSET"),("12003","Giro Diterima","ASSET"),("21301","Giro Diterbitkan","LIABILITY"),("32002","Ikhtisar Laba/Rugi","EQUITY")]:
+    for code, name, typ in [("64002","Beban Komisi Penjualan","EXPENSE"),("23002","Utang Komisi","LIABILITY"),("22002","Utang PPh 21","LIABILITY"),("13002","Barang Dalam Perjalanan","ASSET"),("21201","Uang Muka Penjualan","LIABILITY"),("12002","Uang Muka Pembelian","ASSET"),("12003","Giro Diterima","ASSET"),("21301","Giro Diterbitkan","LIABILITY"),("21101","Barang Diterima Belum Ditagih","LIABILITY"),("41002","Diskon Penjualan","REVENUE"),("32002","Ikhtisar Laba/Rugi","EQUITY")]:
         c.execute("INSERT OR IGNORE INTO chart_of_accounts(account_code,account_name,account_type) VALUES(?,?,?)",(code,name,typ))
     c.commit()
     # Tahap2: seed master tarif pajak
@@ -359,6 +361,134 @@ def init_db():
     except Exception: pass
     try: c.execute("CREATE TABLE IF NOT EXISTS doc_sequences(seq_key TEXT PRIMARY KEY, last_no INTEGER DEFAULT 0)")
     except Exception: pass
+    c.commit()
+    # --- Fase 0: kolom aktif barang + kolom audit ketat (kompatibel DB lama) ---
+    for sql in [
+        "ALTER TABLE items ADD COLUMN is_active INTEGER DEFAULT 1",
+        "ALTER TABLE activity_logs ADD COLUMN method TEXT DEFAULT ''",
+        "ALTER TABLE activity_logs ADD COLUMN path TEXT DEFAULT ''",
+        "ALTER TABLE activity_logs ADD COLUMN status INTEGER DEFAULT 200",
+        "ALTER TABLE activity_logs ADD COLUMN ip TEXT DEFAULT ''",
+        "ALTER TABLE activity_logs ADD COLUMN ref_type TEXT DEFAULT ''",
+        "ALTER TABLE activity_logs ADD COLUMN ref_id INTEGER NULL",
+        "ALTER TABLE activity_logs ADD COLUMN before_json TEXT DEFAULT ''",
+        "ALTER TABLE activity_logs ADD COLUMN after_json TEXT DEFAULT ''",
+    ]:
+        try: c.execute(sql)
+        except Exception: pass
+    try: c.execute("CREATE INDEX IF NOT EXISTS idx_alogs_time ON activity_logs(created_at DESC)")
+    except Exception: pass
+    try: c.execute("CREATE INDEX IF NOT EXISTS idx_alogs_user ON activity_logs(username, created_at DESC)")
+    except Exception: pass
+    try: c.execute("CREATE INDEX IF NOT EXISTS idx_alogs_status ON activity_logs(status, created_at DESC)")
+    except Exception: pass
+    c.commit()
+    # --- Fase 1: field rantai Accurate 5 + master pendukung ---
+    for sql in [
+        "ALTER TABLE sales_quotations ADD COLUMN valid_until TEXT DEFAULT ''",
+        "ALTER TABLE sales_orders ADD COLUMN ship_date TEXT DEFAULT ''",
+        "ALTER TABLE sales_orders ADD COLUMN customer_po TEXT DEFAULT ''",
+        "ALTER TABLE delivery_orders ADD COLUMN ship_to TEXT DEFAULT ''",
+        "ALTER TABLE delivery_orders ADD COLUMN ship_via TEXT DEFAULT ''",
+        "ALTER TABLE purchase_orders ADD COLUMN fob TEXT DEFAULT ''",
+        "ALTER TABLE purchase_orders ADD COLUMN terms TEXT DEFAULT ''",
+        "ALTER TABLE purchase_orders ADD COLUMN ship_via TEXT DEFAULT ''",
+        "ALTER TABLE purchase_orders ADD COLUMN ship_to TEXT DEFAULT ''",
+        "ALTER TABLE purchase_orders ADD COLUMN expected_date TEXT DEFAULT ''",
+        "ALTER TABLE receive_items ADD COLUMN receipt_no TEXT DEFAULT ''",
+        "ALTER TABLE receive_items ADD COLUMN ship_via TEXT DEFAULT ''",
+        "ALTER TABLE payments ADD COLUMN pph23_no TEXT DEFAULT ''",
+        "ALTER TABLE payments ADD COLUMN pph23_amount REAL DEFAULT 0",
+        "ALTER TABLE items ADD COLUMN category_id INTEGER NULL",
+        "ALTER TABLE items ADD COLUMN group_id INTEGER NULL",
+        "ALTER TABLE fixed_assets ADD COLUMN type_id INTEGER NULL",
+        "ALTER TABLE fixed_assets ADD COLUMN status TEXT DEFAULT 'ACTIVE'",
+    ]:
+        try: c.execute(sql)
+        except Exception: pass
+    for sql in [
+        """CREATE TABLE IF NOT EXISTS stock_transfers(
+          id INTEGER PRIMARY KEY AUTOINCREMENT, transfer_number TEXT UNIQUE NOT NULL,
+          transaction_date TEXT NOT NULL, item_id INTEGER NOT NULL REFERENCES items(id),
+          from_warehouse INTEGER NOT NULL, to_warehouse INTEGER NOT NULL,
+          quantity REAL NOT NULL, unit_cost REAL DEFAULT 0,
+          ship_cost REAL DEFAULT 0, ship_cost_account_id INTEGER NULL,
+          status TEXT DEFAULT 'POSTED', note TEXT DEFAULT '')""",
+        """CREATE TABLE IF NOT EXISTS item_categories(
+          id INTEGER PRIMARY KEY AUTOINCREMENT, category_code TEXT UNIQUE NOT NULL,
+          category_name TEXT NOT NULL)""",
+        """CREATE TABLE IF NOT EXISTS item_groups(
+          id INTEGER PRIMARY KEY AUTOINCREMENT, group_code TEXT UNIQUE NOT NULL,
+          group_name TEXT NOT NULL, category_id INTEGER NULL)""",
+        """CREATE TABLE IF NOT EXISTS account_budgets(
+          id INTEGER PRIMARY KEY AUTOINCREMENT, account_id INTEGER NOT NULL REFERENCES chart_of_accounts(id),
+          year TEXT NOT NULL, month TEXT NOT NULL DEFAULT '00', amount REAL DEFAULT 0,
+          UNIQUE(account_id, year, month))""",
+        """CREATE TABLE IF NOT EXISTS asset_types(
+          id INTEGER PRIMARY KEY AUTOINCREMENT, type_code TEXT UNIQUE NOT NULL,
+          type_name TEXT NOT NULL, useful_months INTEGER DEFAULT 48,
+          fiscal_group TEXT DEFAULT '')""",
+    ]:
+        try: c.execute(sql)
+        except Exception: pass
+    # --- Fase 2 (Deluxe): RMA + Proyek ---
+    for sql in [
+        """CREATE TABLE IF NOT EXISTS rmas(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          rma_number TEXT UNIQUE NOT NULL,
+          sales_invoice_id INTEGER NOT NULL REFERENCES sales_invoices(id),
+          transaction_date TEXT NOT NULL,
+          status TEXT DEFAULT 'OPEN',
+          complaint TEXT DEFAULT '',
+          journal_entry_id INTEGER NULL REFERENCES journal_entries(id))""",
+        """CREATE TABLE IF NOT EXISTS rma_lines(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          rma_id INTEGER NOT NULL REFERENCES rmas(id) ON DELETE CASCADE,
+          item_id INTEGER NOT NULL REFERENCES items(id),
+          warehouse_id INTEGER NOT NULL REFERENCES warehouses(id),
+          quantity REAL NOT NULL, unit_price REAL NOT NULL,
+          condition TEXT DEFAULT 'RUSAK', description TEXT DEFAULT '')""",
+        """CREATE TABLE IF NOT EXISTS rma_actions(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          rma_id INTEGER NOT NULL REFERENCES rmas(id) ON DELETE CASCADE,
+          action TEXT NOT NULL,
+          transaction_date TEXT NOT NULL,
+          amount REAL DEFAULT 0,
+          delivery_order_id INTEGER NULL REFERENCES delivery_orders(id),
+          sales_return_id INTEGER NULL REFERENCES sales_returns(id),
+          note TEXT DEFAULT '',
+          journal_entry_id INTEGER NULL REFERENCES journal_entries(id))""",
+        """CREATE TABLE IF NOT EXISTS projects(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          project_code TEXT UNIQUE NOT NULL,
+          project_name TEXT NOT NULL,
+          customer_id INTEGER NULL REFERENCES customers(id),
+          start_date TEXT NOT NULL, end_date TEXT DEFAULT '',
+          budget REAL DEFAULT 0, status TEXT DEFAULT 'OPEN',
+          wip_account_id INTEGER NULL REFERENCES chart_of_accounts(id),
+          revenue_account_id INTEGER NULL REFERENCES chart_of_accounts(id),
+          cost_account_id INTEGER NULL REFERENCES chart_of_accounts(id),
+          journal_entry_id INTEGER NULL REFERENCES journal_entries(id))""",
+        """CREATE TABLE IF NOT EXISTS project_costs(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          transaction_date TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          item_id INTEGER NULL REFERENCES items(id),
+          warehouse_id INTEGER NULL REFERENCES warehouses(id),
+          quantity REAL DEFAULT 0, unit_cost REAL DEFAULT 0,
+          amount REAL NOT NULL,
+          ref_type TEXT DEFAULT '', ref_id INTEGER NULL,
+          journal_entry_id INTEGER NULL REFERENCES journal_entries(id))""",
+        """CREATE TABLE IF NOT EXISTS project_bills(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          sales_invoice_id INTEGER NULL REFERENCES sales_invoices(id),
+          amount REAL NOT NULL, transaction_date TEXT NOT NULL)""",
+    ]:
+        try: c.execute(sql)
+        except Exception: pass
+    c.execute("INSERT OR IGNORE INTO chart_of_accounts(account_code,account_name,account_type) VALUES('13003','Barang Dalam Proses (WIP)','ASSET')")
     c.commit()
     # --- Tahap1: bulatkan semua nominal uang ke Rp integer (tanpa sen) ---
     try:
@@ -498,6 +628,9 @@ def post_journal(c, number, date, ref_type, ref_id, desc, lines):
     """lines: [(account_id, debit, credit, memo)] — validasi balance, return journal_id.
     Kebijakan Rp integer: semua D/K dibulatkan ke rupiah bulat."""
     lines = [(a, rp_int(d), rp_int(k), m) for a, d, k, m in lines]
+    for a,d,k,m in lines:
+        if not a:
+            raise ValueError(f"Akun tidak valid pada baris jurnal '{m or ''}'")
     td = sum(l[1] for l in lines); tc = sum(l[2] for l in lines)
     if abs(td-tc) > 0 or td <= 0:
         raise ValueError(f"Jurnal tidak seimbang (D={td} K={tc})")
@@ -646,6 +779,99 @@ def fire_webhook(c, event, payload):
         c.execute("INSERT INTO webhook_logs(event,payload,created_at) VALUES(?,?,?)",
             (event, json.dumps(payload)[:2000], datetime.datetime.now().isoformat()))
     except Exception: pass
+    # Dispatch HTTP riil (non-blocking utk transaksi): best-effort via stdlib urllib
+    try:
+        hooks = [dict(r) for r in c.execute("SELECT url FROM webhooks WHERE event=? AND active=1", (event,)).fetchall()]
+    except Exception:
+        hooks = []
+    for h in hooks:
+        try:
+            req = urllib.request.Request(h["url"], data=json.dumps({"event":event,"data":payload}).encode(),
+                headers={"Content-Type":"application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                resp.read(1024)
+        except Exception:
+            pass
+
+AUDIT_GET_PATHS = ("/api/backup","/api/restore","/api/activity","/api/period-locks",
+    "/api/webhooks","/api/users","/api/reports/trial-balance","/api/reports/profit-loss",
+    "/api/reports/balance-sheet","/api/reports/cash-flow","/api/ledger")
+
+def audit_log(user, method, path, status, ref_type="", ref_id=None, before=None, after=None, detail="", ip=""):
+    """Tulis audit via koneksi baru agar selamat dari rollback transaksi utama."""
+    try:
+        lc = conn()
+        try:
+            uid = user["id"] if user is not None and "id" in user.keys() else None
+            uname = user["username"] if user is not None and "username" in user.keys() else (detail or "?")
+        except Exception:
+            uid, uname = None, "?"
+        lc.execute("""INSERT INTO activity_logs(user_id,username,action,detail,created_at,
+            method,path,status,ip,ref_type,ref_id,before_json,after_json)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (uid, uname, f"{method} {path}", (detail or "")[:500],
+             datetime.datetime.now().isoformat(), method, path, status, ip or "",
+             ref_type or "", ref_id,
+             (json.dumps(before, ensure_ascii=False)[:2000] if before is not None else ""),
+             (json.dumps(after, ensure_ascii=False)[:2000] if after is not None else "")))
+        lc.commit(); lc.close()
+    except Exception:
+        pass
+
+def client_ip(handler):
+    try:
+        fwd = handler.headers.get("X-Forwarded-For", "")
+        if fwd: return fwd.split(",")[0].strip()
+        return handler.client_address[0]
+    except Exception:
+        return ""
+
+def void_sales(c, s_id, date):
+    """Eksekusi void invoice penjualan (dipanggil langsung MGR atau dari approval)."""
+    s = c.execute("SELECT * FROM sales_invoices WHERE id=?", (s_id,)).fetchone()
+    if not s: raise ValueError("Invoice tidak ditemukan")
+    if s["status"]=="VOID": raise ValueError("Invoice sudah void")
+    jid = reverse_journal(c, s["journal_entry_id"], next_no(c,"JE","journal_entries","journal_number"), date, "Void "+s["invoice_number"])
+    for t in q(c,"SELECT * FROM inventory_transactions WHERE reference_type='SALES_INVOICE' AND reference_id=?", (s_id,)):
+        c.execute("INSERT INTO inventory_transactions(item_id,warehouse_id,transaction_date,reference_type,reference_id,qty_in,cogs_unit_price) VALUES(?,?,?,?,?,?,?)",
+            (t["item_id"],t["warehouse_id"],date,"SALES_VOID",s_id,t["qty_out"],t["cogs_unit_price"]))
+        if is_fifo(c,t["item_id"]):
+            add_layer(c,t["item_id"],t["warehouse_id"],date,"SALES_VOID",s_id,t["qty_out"],t["cogs_unit_price"])
+    for t in q(c,"SELECT * FROM inventory_transactions WHERE reference_type='TRADE_IN' AND reference_id=?", (s_id,)):
+        if stock_of(c,t["item_id"],t["warehouse_id"]) < t["qty_in"]:
+            raise ValueError("Stok barang tukar-tambah sudah terpakai, void dibatalkan")
+        c.execute("INSERT INTO inventory_transactions(item_id,warehouse_id,transaction_date,reference_type,reference_id,qty_out,cogs_unit_price) VALUES(?,?,?,?,?,?,?)",
+            (t["item_id"],t["warehouse_id"],date,"TRADE_VOID",s_id,t["qty_in"],t["cogs_unit_price"]))
+        if is_fifo(c,t["item_id"]):
+            consume_fifo(c,t["item_id"],t["warehouse_id"],date,"TRADE_VOID",s_id,t["qty_in"])
+    if "commission_journal_id" in s.keys() and s["commission_journal_id"]:
+        reverse_journal(c, s["commission_journal_id"], next_no(c,"JE","journal_entries","journal_number"), date, "Void komisi "+s["invoice_number"])
+    for r in q(c,"SELECT delivery_order_line_id,quantity FROM sales_invoice_lines WHERE sales_invoice_id=? AND delivery_order_line_id IS NOT NULL",(s_id,)):
+        c.execute("UPDATE delivery_order_lines SET invoiced_qty=invoiced_qty-? WHERE id=?",(r["quantity"],r["delivery_order_line_id"]))
+    for so_id in {r["sales_order_id"] for r in q(c,"SELECT DISTINCT so.sales_order_id FROM sales_invoice_lines l JOIN sales_order_lines so ON so.id=l.sales_order_line_id WHERE l.sales_invoice_id=? AND l.sales_order_line_id IS NOT NULL",(s_id,)) if r["sales_order_id"]}:
+        refresh_doc_status(c,"SO",so_id)
+    c.execute("UPDATE sales_invoices SET status='VOID' WHERE id=?", (s_id,))
+    return jid
+
+def void_purchase(c, p_id, date):
+    """Eksekusi void invoice pembelian (dipanggil langsung MGR atau dari approval)."""
+    s = c.execute("SELECT * FROM purchase_invoices WHERE id=?", (p_id,)).fetchone()
+    if not s: raise ValueError("Tagihan tidak ditemukan")
+    if s["status"]=="VOID": raise ValueError("Tagihan sudah void")
+    ins = q(c,"SELECT * FROM inventory_transactions WHERE reference_type='PURCHASE_INVOICE' AND reference_id=?", (p_id,))
+    for t in ins:
+        if stock_of(c,t["item_id"],t["warehouse_id"]) < t["qty_in"]:
+            raise ValueError("Stok tidak cukup untuk void (barang sudah terjual)")
+    jid = reverse_journal(c, s["journal_entry_id"], next_no(c,"JE","journal_entries","journal_number"), date, "Void "+s["invoice_number"])
+    for t in ins:
+        c.execute("INSERT INTO inventory_transactions(item_id,warehouse_id,transaction_date,reference_type,reference_id,qty_out,cogs_unit_price) VALUES(?,?,?,?,?,?,?)",
+            (t["item_id"],t["warehouse_id"],date,"PURCHASE_VOID",p_id,t["qty_in"],t["cogs_unit_price"]))
+        if is_fifo(c,t["item_id"]):
+            consume_fifo(c,t["item_id"],t["warehouse_id"],date,"PURCHASE_VOID",p_id,t["qty_in"])
+    for r in q(c,"SELECT receive_line_id,quantity FROM purchase_invoice_lines WHERE purchase_invoice_id=? AND receive_line_id IS NOT NULL",(p_id,)):
+        c.execute("UPDATE receive_item_lines SET billed_qty=billed_qty-? WHERE id=?",(r["quantity"],r["receive_line_id"]))
+    c.execute("UPDATE purchase_invoices SET status='VOID' WHERE id=?", (p_id,))
+    return jid
 
 def paid_of(c, invoice_type, invoice_id):
     r = c.execute("SELECT COALESCE(SUM(amount),0) s FROM payment_allocations WHERE invoice_type=? AND invoice_id=?",
@@ -747,14 +973,20 @@ class H(BaseHTTPRequestHandler):
     server_version = "AccurateClone/1.0"
     def log_message(self, *a): pass
     def _json(self, obj, code=200):
-        if code==200 and getattr(self, "_alog", None):
+        alog = getattr(self, "_alog", None)
+        if alog:
             try:
-                lc = conn()
-                lc.execute("INSERT INTO activity_logs(user_id,username,action,detail,created_at) VALUES(?,?,?,?,?)",
-                    (self._alog[0], self._alog[1], self._alog[2], self._alog[3], datetime.datetime.now().isoformat()))
-                lc.commit(); lc.close()
+                audit_log({"id":alog[0],"username":alog[1]}, "POST", alog[2], code,
+                    detail=alog[3], ip=client_ip(self))
             except Exception: pass
             self._alog = None
+        glog = getattr(self, "_get_audit", None)
+        if glog:
+            try:
+                audit_log({"id":glog[0],"username":glog[1]}, "GET", glog[2], code,
+                    ip=client_ip(self))
+            except Exception: pass
+            self._get_audit = None
         b = json.dumps(obj, ensure_ascii=False).encode()
         self.send_response(code); self.send_header("Content-Type","application/json")
         self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b)
@@ -772,14 +1004,27 @@ class H(BaseHTTPRequestHandler):
         c = conn()
         try:
             me = auth_user(c, self)
-            if not me: return self._json({"error":"Belum login"},401)
+            if not me:
+                try: audit_log(None,"GET",path,401,detail="Belum login",ip=client_ip(self))
+                except Exception: pass
+                return self._json({"error":"Belum login"},401)
+            if path in AUDIT_GET_PATHS:
+                try: self._get_audit = (me["id"], me["username"], path)
+                except Exception: self._get_audit = None
             if path in ("/api/reports/trial-balance","/api/reports/profit-loss","/api/reports/balance-sheet","/api/reports/cash-flow"):
                 need(me,"ADMIN","MANAGER")
             if path=="/api/users": need(me,"ADMIN")
             if path=="/api/activity": need(me,"ADMIN","MANAGER")
+            if path=="/api/webhooks": need(me,"ADMIN","MANAGER","FINANCE")
             if path=="/api/me": return self._json({"id":me["id"],"username":me["username"],"full_name":me["full_name"],"role":me["role"]})
             if path=="/api/users": return self._json(q(c,"SELECT id,username,full_name,role,is_active FROM users ORDER BY id"))
-            if path=="/api/activity": return self._json(q(c,"SELECT * FROM activity_logs ORDER BY id DESC LIMIT 200"))
+            if path=="/api/activity":
+                f = qs.get("status",["all"])[0]
+                if f=="fail":
+                    return self._json(q(c,"SELECT * FROM activity_logs WHERE status>=400 ORDER BY id DESC LIMIT 200"))
+                if f=="ok":
+                    return self._json(q(c,"SELECT * FROM activity_logs WHERE status<400 ORDER BY id DESC LIMIT 200"))
+                return self._json(q(c,"SELECT * FROM activity_logs ORDER BY id DESC LIMIT 200"))
             if path=="/api/coa": return self._json(q(c,"SELECT * FROM chart_of_accounts ORDER BY account_code"))
             if path=="/api/warehouses": return self._json(q(c,"SELECT * FROM warehouses"))
             if path=="/api/items":
@@ -851,6 +1096,51 @@ class H(BaseHTTPRequestHandler):
                 return self._json(rows)
             if path=="/api/payments": return self._json(q(c,"SELECT * FROM payments ORDER BY id DESC LIMIT 200"))
             if path=="/api/taxes": return self._json(q(c,"SELECT * FROM taxes WHERE is_active=1 ORDER BY rate DESC, tax_code"))
+            if path=="/api/categories": return self._json(q(c,"SELECT * FROM item_categories ORDER BY category_name"))
+            if path=="/api/groups": return self._json(q(c,"SELECT g.*,c.category_name FROM item_groups g LEFT JOIN item_categories c ON c.id=g.category_id ORDER BY g.group_name"))
+            if path=="/api/asset-types": return self._json(q(c,"SELECT * FROM asset_types ORDER BY type_name"))
+            if path=="/api/budgets":
+                year = qs.get("year",[datetime.date.today().strftime("%Y")])[0]
+                rows = q(c,"""SELECT a.account_code,a.account_name,b.year,b.month,b.amount,
+                    COALESCE((SELECT SUM(CASE WHEN a.account_type IN ('REVENUE') THEN l.credit-l.debit ELSE l.debit-l.credit END)
+                     FROM journal_entry_lines l JOIN journal_entries e ON e.id=l.journal_entry_id AND e.status='POSTED'
+                     WHERE l.account_id=a.id AND substr(e.transaction_date,1,4)=? AND (b.month='00' OR substr(e.transaction_date,6,2)=b.month)),0) realisasi
+                    FROM account_budgets b JOIN chart_of_accounts a ON a.id=b.account_id WHERE b.year=? ORDER BY a.account_code""",(year,year))
+                return self._json({"year":year,"rows":rows})
+            if path=="/api/bank-book":
+                aid = qs.get("account_id",[""])[0]; month = qs.get("month",[""])[0]
+                sql = """SELECT e.transaction_date,e.journal_number,e.description,l.debit,l.credit,
+                    (SELECT SUM(l2.debit-l2.credit) FROM journal_entry_lines l2 JOIN journal_entries e2 ON e2.id=l2.journal_entry_id
+                     WHERE e2.status='POSTED' AND l2.account_id=l.account_id AND (e2.transaction_date<e.transaction_date OR (e2.transaction_date=e.transaction_date AND e2.id<=e.id))) AS saldo
+                    FROM journal_entry_lines l JOIN journal_entries e ON e.id=l.journal_entry_id
+                    JOIN chart_of_accounts a ON a.id=l.account_id
+                    WHERE e.status='POSTED' AND a.account_code LIKE '110%'"""
+                args=[]
+                if aid: sql+=" AND l.account_id=?"; args.append(aid)
+                if month: sql+=" AND substr(e.transaction_date,1,7)=?"; args.append(month)
+                sql+=" ORDER BY e.transaction_date,e.id"
+                return self._json(q(c,sql,args))
+            if path=="/api/reports/efaktur":
+                month = qs.get("month",[datetime.date.today().strftime("%Y-%m")])[0]
+                out=["no_faktur;tanggal;npwp;nama;dpp;ppn"]
+                for r in q(c,"""SELECT s.invoice_number,s.transaction_date,s.subtotal,s.tax_amount,cu.customer_name
+                    FROM sales_invoices s JOIN customers cu ON cu.id=s.customer_id
+                    WHERE s.status!='VOID' AND substr(s.transaction_date,1,7)=? ORDER BY s.transaction_date""",(month,)):
+                    out.append(f"{r['invoice_number']};{r['transaction_date']};;{r['customer_name']};{r['subtotal']};{r['tax_amount']}")
+                out.append("")
+                out.append("== PEMBELIAN ==")
+                for r in q(c,"""SELECT s.invoice_number,s.transaction_date,s.subtotal,s.tax_amount,v.vendor_name
+                    FROM purchase_invoices s JOIN vendors v ON v.id=s.vendor_id
+                    WHERE s.status!='VOID' AND substr(s.transaction_date,1,7)=? ORDER BY s.transaction_date""",(month,)):
+                    out.append(f"{r['invoice_number']};{r['transaction_date']};;{r['vendor_name']};{r['subtotal']};{r['tax_amount']}")
+                csv = "\n".join(out)
+                eb = csv.encode()
+                self.send_response(200)
+                self.send_header("Content-Type","text/csv")
+                self.send_header("Content-Disposition",f'attachment; filename="efaktur-{month}.csv"')
+                self.send_header("Content-Length",str(len(eb)))
+                self.end_headers(); self.wfile.write(eb)
+                return
             if path=="/api/approvals":
                 need(me,"ADMIN","MANAGER","FINANCE")
                 return self._json(q(c,"SELECT * FROM approvals ORDER BY id DESC LIMIT 200"))
@@ -877,21 +1167,42 @@ class H(BaseHTTPRequestHandler):
                 if typ=="PURCHASE":
                     return self._json(q(c,"SELECT r.*,s.invoice_number FROM purchase_returns r JOIN purchase_invoices s ON s.id=r.purchase_invoice_id ORDER BY r.id DESC LIMIT 100"))
                 return self._json(q(c,"SELECT r.*,s.invoice_number FROM sales_returns r JOIN sales_invoices s ON s.id=r.sales_invoice_id ORDER BY r.id DESC LIMIT 100"))
+            if path=="/api/rmas":
+                rows = q(c,"SELECT r.*,s.invoice_number,cu.customer_name FROM rmas r JOIN sales_invoices s ON s.id=r.sales_invoice_id JOIN customers cu ON cu.id=s.customer_id ORDER BY r.id DESC LIMIT 200")
+                for r in rows:
+                    r["lines"] = q(c,"SELECT l.*,i.item_code,i.item_name FROM rma_lines l JOIN items i ON i.id=l.item_id WHERE rma_id=?",(r["id"],))
+                    r["actions"] = q(c,"SELECT * FROM rma_actions WHERE rma_id=?",(r["id"],))
+                return self._json(rows)
+            if path=="/api/projects":
+                rows = q(c,"SELECT p.*,cu.customer_name FROM projects p LEFT JOIN customers cu ON cu.id=p.customer_id ORDER BY p.id DESC")
+                for r in rows:
+                    r["costs"] = q(c,"SELECT * FROM project_costs WHERE project_id=?",(r["id"],))
+                    r["bills"] = q(c,"SELECT * FROM project_bills WHERE project_id=?",(r["id"],))
+                    total_cost = sum(c["amount"] for c in r["costs"]) or 0
+                    total_bill = sum(b["amount"] for b in r["bills"]) or 0
+                    r["total_cost"]=total_cost; r["total_bill"]=total_bill; r["profit"]=total_bill-total_cost
+                return self._json(rows)
             if path=="/api/branches":
                 return self._json(q(c,"SELECT b.*, (SELECT COUNT(*) FROM warehouses w WHERE w.branch_id=b.id) n_wh FROM branches b ORDER BY b.branch_code"))
             if path=="/api/quotations":
                 rows = q(c,"SELECT s.*,cu.customer_name FROM sales_quotations s JOIN customers cu ON cu.id=s.customer_id ORDER BY s.id DESC LIMIT 200")
-                for r in rows: r["lines"] = q(c,"SELECT l.*,i.item_name FROM sales_quotation_lines l JOIN items i ON i.id=l.item_id WHERE quotation_id=?",(r["id"],))
+                for r in rows:
+                    r["lines"] = q(c,"SELECT l.*,i.item_name FROM sales_quotation_lines l JOIN items i ON i.id=l.item_id WHERE quotation_id=?",(r["id"],))
+                    r["proceeded"] = q(c,"SELECT order_number FROM sales_orders WHERE quotation_id=?",(r["id"],))
                 return self._json(rows)
             if path=="/api/sales-orders":
                 rows = q(c,"SELECT s.*,cu.customer_name FROM sales_orders s JOIN customers cu ON cu.id=s.customer_id ORDER BY s.id DESC LIMIT 200")
                 for r in rows:
                     r["lines"] = q(c,"SELECT l.*,i.item_name FROM sales_order_lines l JOIN items i ON i.id=l.item_id WHERE sales_order_id=?",(r["id"],))
                     for l in r["lines"]: l.update(so_fulfill(c,l["id"]))
+                    r["proceeded_do"] = q(c,"SELECT delivery_number FROM delivery_orders WHERE sales_order_id=?",(r["id"],))
+                    r["proceeded_si"] = q(c,"SELECT invoice_number FROM sales_invoices WHERE sales_order_id=?",(r["id"],))
                 return self._json(rows)
             if path=="/api/deliveries":
                 rows = q(c,"SELECT d.*,cu.customer_name FROM delivery_orders d JOIN customers cu ON cu.id=d.customer_id ORDER BY d.id DESC LIMIT 200")
-                for r in rows: r["lines"] = q(c,"SELECT l.*,i.item_name FROM delivery_order_lines l JOIN items i ON i.id=l.item_id WHERE delivery_order_id=?",(r["id"],))
+                for r in rows:
+                    r["lines"] = q(c,"SELECT l.*,i.item_name FROM delivery_order_lines l JOIN items i ON i.id=l.item_id WHERE delivery_order_id=?",(r["id"],))
+                    r["proceeded"] = q(c,"SELECT DISTINCT s.invoice_number FROM sales_invoice_lines l JOIN sales_invoices s ON s.id=l.sales_invoice_id WHERE l.delivery_order_line_id IN (SELECT id FROM delivery_order_lines WHERE delivery_order_id=?)",(r["id"],))
                 return self._json(rows)
             if path=="/api/requisitions":
                 rows = q(c,"SELECT r.*,v.vendor_name FROM purchase_requisitions r LEFT JOIN vendors v ON v.id=r.vendor_id ORDER BY r.id DESC LIMIT 200")
@@ -902,6 +1213,7 @@ class H(BaseHTTPRequestHandler):
                 for r in rows:
                     r["lines"] = q(c,"SELECT l.*,i.item_name FROM purchase_order_lines l JOIN items i ON i.id=l.item_id WHERE purchase_order_id=?",(r["id"],))
                     for l in r["lines"]: l.update(po_fulfill(c,l["id"]))
+                    r["proceeded"] = q(c,"SELECT DISTINCT receive_number FROM receive_item_lines l JOIN receive_items r2 ON r2.id=l.receive_id WHERE l.purchase_order_line_id IN (SELECT id FROM purchase_order_lines WHERE purchase_order_id=?)",(r["id"],))
                 return self._json(rows)
             if path=="/api/receives":
                 rows = q(c,"SELECT r.*,v.vendor_name FROM receive_items r JOIN vendors v ON v.id=r.vendor_id ORDER BY r.id DESC LIMIT 200")
@@ -1021,7 +1333,56 @@ class H(BaseHTTPRequestHandler):
             if path=="/api/stock-card":
                 iid = qs.get("item_id",[""])[0]
                 return self._json(q(c,"SELECT t.*,i.item_name,w.warehouse_name FROM inventory_transactions t JOIN items i ON i.id=t.item_id JOIN warehouses w ON w.id=t.warehouse_id WHERE (?='' OR t.item_id=?) ORDER BY t.transaction_date,t.id",(iid,iid)))
+            if path=="/api/stock-adjustments":
+                # Riwayat opname/adjustment dari inventory_transactions (kompatibel frontend multi-line)
+                rows = q(c,"""SELECT t.transaction_date, t.reference_type AS type, t.reference_id,
+                    t.warehouse_id, w.warehouse_name, 'Opname/Adjustment' AS note
+                    FROM inventory_transactions t JOIN warehouses w ON w.id=t.warehouse_id
+                    WHERE t.reference_type IN ('OPNAME','ADJUST')
+                    GROUP BY t.transaction_date,t.reference_type,t.reference_id,t.warehouse_id
+                    ORDER BY t.transaction_date DESC, t.reference_id DESC LIMIT 100""")
+                out=[]
+                for i,r in enumerate(rows):
+                    lines = q(c,"""SELECT t.item_id,i.item_code,i.item_name,
+                        COALESCE(SUM(t.qty_in),0)-COALESCE(SUM(t.qty_out),0) AS difference,
+                        COALESCE(SUM(t.qty_in),0) AS qty_in, COALESCE(SUM(t.qty_out),0) AS qty_out
+                        FROM inventory_transactions t JOIN items i ON i.id=t.item_id
+                        WHERE t.reference_type=? AND t.transaction_date=? AND t.warehouse_id=?
+                        GROUP BY t.item_id""",(r["type"],r["transaction_date"],r["warehouse_id"]))
+                    out.append({"id":r["reference_id"] or (1000000+i),"type":"OPNAME",
+                        "adjustment_number":f"OPN-{r['transaction_date']}-{r['reference_id'] or i}",
+                        "transaction_date":r["transaction_date"],"warehouse_id":r["warehouse_id"],
+                        "note":r["note"],"lines":[{"item_id":l["item_id"],"item_name":l["item_name"],
+                        "system_qty":0,"fisik_qty":l["difference"],"difference":l["difference"],
+                        "quantity":l["difference"]} for l in lines]})
+                return self._json(out)
             if path=="/api/assets": return self._json(q(c,"SELECT * FROM fixed_assets"))
+            if path=="/api/deliveries/open":
+                cid = qs.get("customer_id",[""])[0]
+                rows = q(c,"""SELECT dl.*,d.delivery_number,d.customer_id,i.item_code,i.item_name
+                    FROM delivery_order_lines dl JOIN delivery_orders d ON d.id=dl.delivery_order_id
+                    JOIN items i ON i.id=dl.item_id
+                    WHERE d.status='POSTED' AND dl.quantity-dl.invoiced_qty>0.005 AND (?='' OR d.customer_id=?)""",(cid,cid))
+                return self._json(rows)
+            if path=="/api/receives/open":
+                vid = qs.get("vendor_id",[""])[0]
+                rows = q(c,"""SELECT rl.*,r.receive_number,r.vendor_id,i.item_code,i.item_name
+                    FROM receive_item_lines rl JOIN receive_items r ON r.id=rl.receive_id
+                    JOIN items i ON i.id=rl.item_id
+                    WHERE r.status='POSTED' AND rl.quantity-rl.billed_qty>0.005 AND (?='' OR r.vendor_id=?)""",(vid,vid))
+                return self._json(rows)
+            if path=="/api/sales-orders/open":
+                cid = qs.get("customer_id",[""])[0]
+                rows = q(c,"""SELECT s.id AS so_id,s.order_number,l.*,i.item_code,i.item_name
+                    FROM sales_order_lines l JOIN sales_orders s ON s.id=l.sales_order_id
+                    JOIN items i ON i.id=l.item_id
+                    WHERE s.status IN ('OPEN','PARTIAL') AND (?='' OR s.customer_id=?)""",(cid,cid))
+                out=[]
+                for r in rows:
+                    f = so_fulfill(c,r["id"])
+                    if f["ordered"]-f["delivered"] > 0.005:
+                        r.update(f); out.append(r)
+                return self._json(out)
             if path=="/api/webhooks": return self._json({"webhooks":q(c,"SELECT * FROM webhooks"),"logs":q(c,"SELECT * FROM webhook_logs ORDER BY id DESC LIMIT 50")})
             if path=="/api/reports/trial-balance":
                 rows = q(c,"SELECT a.account_code,a.account_name,a.account_type,COALESCE(SUM(l.debit),0) d,COALESCE(SUM(l.credit),0) k FROM chart_of_accounts a LEFT JOIN journal_entry_lines l ON l.account_id=a.id LEFT JOIN journal_entries e ON e.id=l.journal_entry_id AND e.status='POSTED' GROUP BY a.id ORDER BY a.account_code")
@@ -1104,6 +1465,8 @@ class H(BaseHTTPRequestHandler):
             if path=="/api/login":
                 u = c.execute("SELECT * FROM users WHERE username=? AND is_active=1",(b.get("username",""),)).fetchone()
                 if not u or u["password_hash"] != hash_pw(b.get("password",""), u["salt"]):
+                    try: audit_log(None,"POST","/api/login",401,detail=f"Login gagal: {b.get('username','')}",ip=client_ip(self))
+                    except Exception: pass
                     return self._json({"error":"Username/password salah"},401)
                 tok = secrets.token_hex(24)
                 exp = (datetime.datetime.now()+datetime.timedelta(hours=12)).isoformat()
@@ -1137,7 +1500,10 @@ class H(BaseHTTPRequestHandler):
                 self._alog = (me["id"], me["username"], "change-password", "Ganti password")
                 return self._json({"ok":True})
             me = auth_user(c, self)
-            if not me: return self._json({"error":"Belum login"},401)
+            if not me:
+                try: audit_log(None,"POST",path,401,detail="Belum login",ip=client_ip(self))
+                except Exception: pass
+                return self._json({"error":"Belum login"},401)
             self._alog = (me["id"], me["username"], path, json.dumps(b, ensure_ascii=False)[:300])
             # Tahap2: RBAC granular — ADMIN penuh, MANAGER/FINANCE keuangan, GUDANG stok, HRD sdm
             MGR = ("ADMIN","MANAGER","FINANCE")
@@ -1145,21 +1511,28 @@ class H(BaseHTTPRequestHandler):
             WHM = ("ADMIN","MANAGER","GUDANG","FINANCE")
             if path in ("/api/journals","/api/sales","/api/purchases","/api/payments","/api/transfers",
                         "/api/sales/void","/api/purchases/void","/api/sales/returns","/api/purchases/returns",
-                        "/api/stock/opname","/api/payroll","/api/assets/depreciate","/api/deliveries",
+                        "/api/stock/opname","/api/stock/transfer","/api/stock-adjustments","/api/returns",
+                        "/api/rmas/action","/api/projects/material","/api/projects/cost","/api/projects/bill","/api/projects/ending",
+                        "/api/payroll","/api/assets/depreciate","/api/deliveries",
                         "/api/deliveries/void","/api/receives","/api/receives/void","/api/ocr-draft",
                         "/api/sales-dp","/api/sales-dp/allocate","/api/purchase-dp","/api/purchase-dp/allocate",
                         "/api/giros","/api/giros/clear","/api/giros/reject"):
                 check_lock(c, b.get("date") or b.get("transaction_date") or datetime.date.today().isoformat())
-            if path in ("/api/coa","/api/warehouses","/api/items","/api/customers","/api/vendors",
-                        "/api/vendors/limit","/api/customers/limit","/api/units","/api/journals","/api/transfers",
-                        "/api/assets","/api/assets/depreciate","/api/sales/void","/api/purchases/void",
-                        "/api/stock/opname","/api/webhooks","/api/users","/api/salespersons","/api/payroll",
+            if path in ("/api/coa","/api/warehouses","/api/customers","/api/vendors",
+                        "/api/vendors/limit","/api/vendors/update","/api/customers/limit","/api/customers/update","/api/units","/api/journals","/api/transfers",
+                        "/api/assets","/api/assets/depreciate",
+                        "/api/webhooks","/api/users","/api/salespersons","/api/payroll",
                         "/api/branches","/api/warehouses/branch","/api/reconcile/auto","/api/reconcile/manual","/api/reconcile/unmatch",
-                        "/api/employees","/api/leaves/decide","/api/items/method","/api/restore",
-                        "/api/quotations/close","/api/sales-orders/close","/api/deliveries/void",
-                        "/api/requisitions/close","/api/purchase-orders/close","/api/receives/void",
-                        "/api/period-end","/api/taxes","/api/approvals/decide","/api/assets/dispose"):
+                        "/api/employees","/api/leaves/decide","/api/items/method","/api/items/deactivate","/api/restore",
+                        "/api/quotations/close","/api/quotations/delete","/api/sales-orders/close","/api/sales-orders/update","/api/sales-orders/delete","/api/deliveries/void",
+                        "/api/requisitions/close","/api/requisitions/delete","/api/purchase-orders/close","/api/purchase-orders/delete","/api/receives/void",
+                        "/api/period-end","/api/taxes","/api/approvals/decide","/api/assets/dispose",
+                        "/api/items/set-price","/api/budgets","/api/asset-types","/api/assets/dispose-monthly",
+                        "/api/rmas/decide","/api/rmas/action","/api/projects","/api/projects/material","/api/projects/cost","/api/projects/bill","/api/projects/ending",
+                        "/api/statements/import"):
                 need(me, *MGR)
+            if path in ("/api/items","/api/items/update","/api/items/categorize","/api/categories","/api/groups","/api/import/items","/api/stock/opname","/api/stock/transfer","/api/stock-adjustments","/api/rmas"):
+                need(me, *WHM)
             if path=="/api/period-end":
                 need(me, "ADMIN")
             if path=="/api/sales-dp":
@@ -1486,11 +1859,26 @@ class H(BaseHTTPRequestHandler):
             if path=="/api/approvals/decide":
                 ap = c.execute("SELECT * FROM approvals WHERE id=?",(b["id"],)).fetchone()
                 if not ap or ap["status"]!="PENDING": raise ValueError("Pengajuan tidak valid")
-                if b.get("approve"):
-                    c.execute("UPDATE approvals SET status='APPROVED',decided_by=?,decided_at=? WHERE id=?",(me["username"],datetime.datetime.now().isoformat(),ap["id"]))
-                else:
+                if not b.get("approve"):
                     c.execute("UPDATE approvals SET status='REJECTED',decided_by=?,decided_at=? WHERE id=?",(me["username"],datetime.datetime.now().isoformat(),ap["id"]))
-                c.commit(); return self._json({"ok":True})
+                    c.commit(); return self._json({"ok":True,"status":"REJECTED"})
+                # Eksekusi aksi asli (maker-checker end-to-end)
+                date = b.get("date", datetime.date.today().isoformat())
+                result = {"status":"APPROVED"}
+                if ap["kind"]=="VOID" and ap["ref_type"]=="SALES_INVOICE":
+                    jid = void_sales(c, ap["ref_id"], date)
+                    result["reversal_journal"]=jid
+                elif ap["kind"]=="VOID" and ap["ref_type"]=="PURCHASE_INVOICE":
+                    jid = void_purchase(c, ap["ref_id"], date)
+                    result["reversal_journal"]=jid
+                else:
+                    raise ValueError(f"Aksi {ap['kind']} {ap['ref_type']} belum didukung eksekusi otomatis")
+                c.execute("UPDATE approvals SET status='APPROVED',decided_by=?,decided_at=? WHERE id=?",(me["username"],datetime.datetime.now().isoformat(),ap["id"]))
+                c.commit()
+                try: audit_log(me,"POST",path,200,ref_type=ap["ref_type"],ref_id=ap["ref_id"],
+                    after=result,detail=f"Approve {ap['kind']} {ap['ref_type']}#{ap['ref_id']}",ip=client_ip(self))
+                except Exception: pass
+                return self._json({"ok":True,"status":"APPROVED","executed":result})
             if path=="/api/payroll/calc":
                 # TER sederhana bulanan (disederhanakan dari PMK 168/2023): tanpa PTKP harian
                 gross = rp_int(b.get("gross",0))
@@ -1515,14 +1903,41 @@ class H(BaseHTTPRequestHandler):
                 harga = rp_int(b.get("sale_price",0))
                 date = b.get("date", datetime.date.today().isoformat())
                 # Dr Kas + Dr Akumulasi + (Dr Rugi / Cr Laba) / Cr Peralatan
-                jl=[(acct(c,"11001") or a["asset_account_id"],harga,0,"Kas disposal")]
-                jl.append((a["accum_account_id"] or acct(c,"15002"),rp_int(a["accum_depr"]),0,"Akumulasi"))
-                if harga>=nilai_buku: jl.append((a["asset_account_id"],0,rp_int(a["cost"]),"Peralatan")); jl.append((acct(c,"71001"),0,harga-nilai_buku,"Laba disposal"))
-                else: jl.append((a["asset_account_id"],0,rp_int(a["cost"]),"Peralatan")); jl.append((acct(c,"72001"),nilai_buku-harga,0,"Rugi disposal"))
+                asset_acc = a["asset_account_id"] or acct(c,"15001")
+                accum_acc = a["accum_account_id"] or acct(c,"15002")
+                cash_acc = a["asset_account_id"] and (acct(c,"11001") or asset_acc) or acct(c,"11001")
+                jl=[(cash_acc,harga,0,"Kas disposal")]
+                jl.append((accum_acc,rp_int(a["accum_depr"]),0,"Akumulasi"))
+                if harga>=nilai_buku: jl.append((asset_acc,0,rp_int(a["cost"]),"Peralatan")); jl.append((acct(c,"71001"),0,harga-nilai_buku,"Laba disposal"))
+                else: jl.append((asset_acc,0,rp_int(a["cost"]),"Peralatan")); jl.append((acct(c,"72001"),nilai_buku-harga,0,"Rugi disposal"))
                 # sesuaikan: ganti akun kas bila ada
                 jid=post_journal(c,next_no(c,"JE","journal_entries","journal_number"),date,"ASSET_DISPOSE",a["id"],f"Disposal {a['asset_name']}",jl)
-                c.execute("DELETE FROM fixed_assets WHERE id=?",(a["id"],))
-                c.commit(); return self._json({"ok":True,"journal":jid,"book_value":nilai_buku})
+                c.execute("UPDATE fixed_assets SET status='DISPOSED' WHERE id=?",(a["id"],))
+                c.commit()
+                try: audit_log(me,"POST",path,200,ref_type="ASSET",ref_id=a["id"],
+                    before={"status":"ACTIVE","book_value":nilai_buku},after={"status":"DISPOSED","sale":harga},
+                    detail=f"Disposal {a['asset_code']}",ip=client_ip(self))
+                except Exception: pass
+                return self._json({"ok":True,"journal":jid,"book_value":nilai_buku})
+            if path=="/api/assets/dispose-monthly":
+                # Jadwal penyusutan bulanan semua aset ACTIVE (Accurate: proses akhir bulan)
+                date = b.get("date", datetime.date.today().isoformat())
+                n=0; total=0
+                for a in q(c,"SELECT * FROM fixed_assets WHERE (status IS NULL OR status='ACTIVE')"):
+                    sisa = (a["cost"] or 0)-(a["accum_depr"] or 0)
+                    if sisa <= 0.005: continue
+                    if (a["method"] or "STRAIGHT")=="STRAIGHT": m = (a["cost"] or 0)/max(a["useful_months"] or 48,1)
+                    else: m = sisa*0.05
+                    m = rp_int(min(m,sisa))
+                    if m <= 0: continue
+                    jid=post_journal(c,next_no(c,"JE","journal_entries","journal_number"),date,"DEPRECIATION",a["id"],
+                        f"Penyusutan {a['asset_name']} {date[:7]}",[(a["depr_expense_account_id"] or acct(c,"64001"),m,0,"Beban"),(a["accum_account_id"] or acct(c,"15002"),0,m,"Akumulasi")])
+                    c.execute("UPDATE fixed_assets SET accum_depr=accum_depr+? WHERE id=?",(m,a["id"]))
+                    n+=1; total+=m
+                c.commit()
+                try: audit_log(me,"POST",path,200,after={"assets":n,"total":total},detail=f"Susut bulanan {n} aset",ip=client_ip(self))
+                except Exception: pass
+                return self._json({"ok":True,"assets":n,"total":total})
             if path=="/api/units":
                 conv = float(b["conversion"])
                 if conv <= 0: raise ValueError("Konversi harus > 0")
@@ -1557,9 +1972,76 @@ class H(BaseHTTPRequestHandler):
                 rebuild_fifo(c, b["id"])
                 c.commit(); return self._json({"ok":True,"method":b["method"]})
             if path=="/api/items":
-                c.execute("INSERT INTO items(item_code,item_name,item_type,base_unit,inventory_account_id,sales_account_id,cogs_account_id,purchase_price,sales_price,avg_cost) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                    (b["item_code"],b["item_name"],b.get("item_type","INVENTORY"),b.get("base_unit","PCS"),b.get("inventory_account_id"),b["sales_account_id"],b.get("cogs_account_id"),b.get("purchase_price",0),b.get("sales_price",0),b.get("purchase_price",0)))
-                c.commit(); return self._json({"ok":True})
+                code = (b.get("item_code") or "").strip() or next_no(c,"BRG","items","item_code")
+                if c.execute("SELECT COUNT(*) n FROM items WHERE item_code=?",(code,)).fetchone()["n"]:
+                    raise ValueError("Kode barang sudah dipakai")
+                if not (b.get("item_name") or "").strip(): raise ValueError("Nama barang wajib diisi")
+                itype = b.get("item_type","INVENTORY")
+                if itype not in ("INVENTORY","SERVICE","NON_INVENTORY"): raise ValueError("Tipe harus INVENTORY/SERVICE/NON_INVENTORY")
+                sales_acc = b.get("sales_account_id") or acct(c,"41001")
+                if not sales_acc: raise ValueError("Akun penjualan tidak valid")
+                inv_acc = b.get("inventory_account_id") or (acct(c,"13001") if itype=="INVENTORY" else None)
+                cogs_acc = b.get("cogs_account_id") or (acct(c,"51001") if itype=="INVENTORY" else None)
+                pp = rp_int(b.get("purchase_price",0)); sp_ = rp_int(b.get("sales_price",0))
+                method = b.get("cost_method","AVERAGE")
+                if method not in ("AVERAGE","FIFO"): method = "AVERAGE"
+                cur = c.execute("INSERT INTO items(item_code,item_name,item_type,base_unit,inventory_account_id,sales_account_id,cogs_account_id,purchase_price,sales_price,avg_cost,cost_method,is_active) VALUES(?,?,?,?,?,?,?,?,?,?,?,1)",
+                    (code,b["item_name"].strip(),itype,b.get("base_unit","PCS") or "PCS",inv_acc,sales_acc,cogs_acc,pp,sp_,pp,method))
+                iid = cur.lastrowid
+                try:
+                    c.execute("INSERT OR IGNORE INTO item_units(item_id,unit_code,conversion) VALUES(?,?,1)", (iid, b.get("base_unit","PCS") or "PCS"))
+                except Exception: pass
+                # Stok awal opsional langsung ke gudang
+                try:
+                    oq = float(b.get("opening_qty",0) or 0)
+                    wid = int(b.get("warehouse_id",0) or 0)
+                except Exception:
+                    oq, wid = 0, 0
+                if oq > 0:
+                    if not wid: raise ValueError("Gudang wajib diisi untuk stok awal")
+                    w = c.execute("SELECT id FROM warehouses WHERE id=?",(wid,)).fetchone()
+                    if not w: raise ValueError("Gudang tidak valid")
+                    date0 = b.get("transaction_date") or datetime.date.today().isoformat()
+                    c.execute("INSERT INTO inventory_transactions(item_id,warehouse_id,transaction_date,reference_type,qty_in,cogs_unit_price) VALUES(?,?,?,?,?,?)",
+                        (iid,wid,date0,"OPENING",oq,pp))
+                    if method=="FIFO":
+                        add_layer(c,iid,wid,date0,"OPENING",None,oq,pp)
+                c.commit()
+                try: audit_log(me,"POST",path,200,ref_type="ITEM",ref_id=iid,after={"item_code":code},detail=f"Tambah barang {code}")
+                except Exception: pass
+                return self._json({"ok":True,"id":iid,"item_code":code})
+            if path=="/api/items/update":
+                r = c.execute("SELECT * FROM items WHERE id=?",(b.get("id"),)).fetchone()
+                if not r: raise ValueError("Barang tidak ditemukan")
+                before = {"item_name":r["item_name"],"purchase_price":r["purchase_price"],"sales_price":r["sales_price"],"item_type":r["item_type"],"base_unit":r["base_unit"]}
+                ntrans = c.execute("SELECT COUNT(*) n FROM inventory_transactions WHERE item_id=?",(r["id"],)).fetchone()["n"]
+                ntype = b.get("item_type", r["item_type"])
+                nunit = b.get("base_unit", r["base_unit"])
+                if ntrans and (ntype != r["item_type"] or nunit != r["base_unit"]):
+                    raise ValueError("Tipe/satuan tak bisa diubah karena sudah ada transaksi stok")
+                c.execute("UPDATE items SET item_name=?,purchase_price=?,sales_price=?,item_type=?,base_unit=?,sales_account_id=?,inventory_account_id=?,cogs_account_id=? WHERE id=?",
+                    (b.get("item_name",r["item_name"]), rp_int(b.get("purchase_price",r["purchase_price"])),
+                     rp_int(b.get("sales_price",r["sales_price"])), ntype, nunit,
+                     b.get("sales_account_id",r["sales_account_id"]), b.get("inventory_account_id",r["inventory_account_id"]),
+                     b.get("cogs_account_id",r["cogs_account_id"]), r["id"]))
+                c.commit()
+                try: audit_log(me,"POST",path,200,ref_type="ITEM",ref_id=r["id"],before=before,
+                    after={"item_name":b.get("item_name",r["item_name"])},detail=f"Update barang {r['item_code']}")
+                except Exception: pass
+                return self._json({"ok":True})
+            if path=="/api/items/deactivate":
+                r = c.execute("SELECT * FROM items WHERE id=?",(b.get("id"),)).fetchone()
+                if not r: raise ValueError("Barang tidak ditemukan")
+                active = 1 if b.get("is_active",0) else 0
+                if not active and stock_of(c,r["id"]) > 0.005:
+                    raise ValueError("Tak bisa nonaktifkan: stok masih ada")
+                c.execute("UPDATE items SET is_active=? WHERE id=?",(1 if active else 0, r["id"]))
+                c.commit()
+                try: audit_log(me,"POST",path,200,ref_type="ITEM",ref_id=r["id"],
+                    before={"is_active":r["is_active"] if "is_active" in r.keys() else 1},after={"is_active":1 if active else 0},
+                    detail=f"{'Aktifkan' if active else 'Nonaktifkan'} barang {r['item_code']}")
+                except Exception: pass
+                return self._json({"ok":True})
             if path=="/api/customers":
                 # Tahap2: quick-create — kode & akun otomatis bila kosong
                 code = b.get("customer_code") or next_no(c,"CUST","customers","customer_code")
@@ -1591,10 +2073,14 @@ class H(BaseHTTPRequestHandler):
                         if qty<=0 or qty > dl["quantity"]-dl["invoiced_qty"]+0.005:
                             raise ValueError(f"Qty melebihi sisa DO ({dl['quantity']-dl['invoiced_qty']})")
                         bprice = round(dl["unit_price"]/(dl["unit_conv"] or 1),2)
-                        lt = round(qty*bprice,2); subtotal+=lt
+                        dl_disc = dl["discount_amount"] if "discount_amount" in dl.keys() else 0
+                        ddisc = rp_int((dl_disc or 0)*qty/max(dl["quantity"],0.0001))
+                        lt = rp_int(qty*bprice)-ddisc; subtotal+=lt
                         share = round(dl["cogs_total"]*(qty/dl["quantity"]),2) if dl["quantity"] else 0
                         clines.append({"kind":"DO","it":it,"dl":dl,"sol":None,"base":qty,"price":bprice,
-                            "disc":0,"lt":lt,"share":share,"ucode":dl["unit_code"],"uqty":qty,"conv":1,"wh":dl["warehouse_id"],"desc":dl["description"] if "description" in dl.keys() else ""})
+                            "disc":ddisc,"lt":lt,"share":share,"ucode":dl["unit_code"],"uqty":qty,"conv":1,"wh":dl["warehouse_id"],"desc":dl["description"] if "description" in dl.keys() else ""})
+                        do_head = c.execute("SELECT sales_order_id FROM delivery_orders WHERE id=?",(dl["delivery_order_id"],)).fetchone()
+                        if do_head and do_head["sales_order_id"]: linked_so.add(do_head["sales_order_id"])
                         continue
                     it = c.execute("SELECT * FROM items WHERE id=?",(l["item_id"],)).fetchone()
                     qty=float(l["qty"]); price=float(l["price"])
@@ -1666,15 +2152,16 @@ class H(BaseHTTPRequestHandler):
                     if e["kind"]=="DO":
                         dl=e["dl"]
                         c.execute("INSERT INTO sales_invoice_lines(sales_invoice_id,item_id,warehouse_id,quantity,unit_price,discount_amount,line_total,description,unit_code,unit_qty,unit_conv,delivery_order_line_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                            (sid,it["id"],e["wh"],e["base"],e["price"],0,e["lt"],e["desc"],e["ucode"],e["uqty"],e["conv"],dl["id"]))
-                        sales_map[it["sales_account_id"]] = sales_map.get(it["sales_account_id"],0)+e["lt"]
+                            (sid,it["id"],e["wh"],e["base"],e["price"],e["disc"],e["lt"],e["desc"],e["ucode"],e["uqty"],e["conv"],dl["id"]))
+                        sales_map[it["sales_account_id"]] = sales_map.get(it["sales_account_id"],0)+e["lt"]+e["disc"]
                         cogs_map[it["cogs_account_id"]] = cogs_map.get(it["cogs_account_id"],0)+e["share"]
                         git_total += e["share"]
                         c.execute("UPDATE delivery_order_lines SET invoiced_qty=invoiced_qty+? WHERE id=?",(e["base"],dl["id"]))
                         continue
                     c.execute("INSERT INTO sales_invoice_lines(sales_invoice_id,item_id,warehouse_id,quantity,unit_price,discount_amount,line_total,description,unit_code,unit_qty,unit_conv,sales_order_line_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                         (sid,it["id"],e["wh"],e["base"],e["price"],e["disc"],e["lt"],e["desc"],e["ucode"],e["uqty"],e["conv"],e["sol"]["id"] if e["sol"] else None))
-                    sales_map[it["sales_account_id"]] = sales_map.get(it["sales_account_id"],0)+e["lt"]
+                    # Accurate 5: penjualan dicatat bruto, diskon di akun Diskon Penjualan (41002)
+                    sales_map[it["sales_account_id"]] = sales_map.get(it["sales_account_id"],0)+e["lt"]+e["disc"]
                     if it["item_type"]=="INVENTORY":
                         if is_fifo(c,it["id"]):
                             h = consume_fifo(c,it["id"],e["wh"],b["date"],"SALES_INVOICE",sid,e["base"])
@@ -1686,7 +2173,9 @@ class H(BaseHTTPRequestHandler):
                         c.execute("INSERT INTO inventory_transactions(item_id,warehouse_id,transaction_date,reference_type,reference_id,qty_out,cogs_unit_price) VALUES(?,?,?,?,?,?,?)",
                             (it["id"],e["wh"],b["date"],"SALES_INVOICE",sid,e["base"],cost))
                 jlines=[(dict(cust)["receivable_account_id"],net_recv,0,"Piutang "+inv_no)]
-                for acc,amt in sales_map.items(): jlines.append((acc,0,amt,"Penjualan "+inv_no))
+                disc_total = rp_int(sum(e.get("disc",0) for e in clines))
+                for acc,amt in sales_map.items(): jlines.append((acc,0,amt,"Penjualan bruto "+inv_no))
+                if disc_total: jlines.append((acct(c,"41002"),disc_total,0,"Diskon "+inv_no))
                 if tax: jlines.append((acct(c,"22001"),0,tax,"PPN Keluaran "+inv_no))
                 if ti_value > 0:
                     jlines.append((ti_item["inventory_account_id"],ti_value,0,"Terima tukar tambah "+ti_item["item_code"]))
@@ -1774,6 +2263,16 @@ class H(BaseHTTPRequestHandler):
                         c.execute("INSERT INTO purchase_invoice_lines(purchase_invoice_id,item_id,warehouse_id,quantity,unit_price,line_total,description,unit_code,unit_qty,unit_conv,receive_line_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                             (pid,it["id"],e["wh"],e["base"],e["price"],e["lt"],e["desc"],e["ucode"],e["uqty"],e["conv"],e["rl"]["id"]))
                         c.execute("UPDATE receive_item_lines SET billed_qty=billed_qty+? WHERE id=?",(e["base"],e["rl"]["id"]))
+                        # Non-posting RI -> nilai diakui penuh di sini (harga invoice)
+                        if it["item_type"]=="INVENTORY":
+                            old_s = stock_of(c,it["id"])
+                            old_c = it["avg_cost"] or e["price"]
+                            rcv_cost = round(e["rl"]["line_total"]/e["rl"]["quantity"],2) if e["rl"]["quantity"] else e["price"]
+                            new_avg = (old_s*old_c + e["base"]*(e["price"]-rcv_cost))/max(old_s,0.0001) if old_s>0 else e["price"]
+                            c.execute("UPDATE items SET avg_cost=?,purchase_price=? WHERE id=?",(new_avg,e["price"],it["id"]))
+                            inv_map[it["inventory_account_id"]] = inv_map.get(it["inventory_account_id"],0)+round(e["lt"],2)
+                        else:
+                            inv_map[acct(c,"13001")] = inv_map.get(acct(c,"13001"),0)+e["lt"]
                         continue
                     c.execute("INSERT INTO purchase_invoice_lines(purchase_invoice_id,item_id,warehouse_id,quantity,unit_price,line_total,description,unit_code,unit_qty,unit_conv,purchase_order_line_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                         (pid,it["id"],e["wh"],e["base"],e["price"],e["lt"],e["desc"],e["ucode"],e["uqty"],e["conv"],e["pol"]["id"] if e["pol"] else None))
@@ -1790,14 +2289,11 @@ class H(BaseHTTPRequestHandler):
                     else:
                         inv_map[acct(c,"13001")] = inv_map.get(acct(c,"13001"),0)+e["lt"]
                 direct_sub = round(sum(e["lt"] for e in clines if e["kind"]!="RI"),2)
+                ri_sub = round(sum(e["lt"] for e in clines if e["kind"]=="RI"),2)
                 jlines=[(a,round(v,2),0,"Persediaan "+inv_no) for a,v in inv_map.items()]
                 if tax: jlines.append((acct(c,"14001"),tax,0,"PPN Masukan "+inv_no))
-                var_total = round(var_total,2)
-                if var_total > 0: jlines.append((acct(c,"51001"),var_total,0,"Selisih harga "+inv_no))
-                # Kenaikan utang = belanja langsung + PPN + selisih; bila selisih negatif, utang dikurangi via Dr
-                utang = round(direct_sub + tax + max(var_total,0),2)
-                # utang = direct + tax + (billed - received)
-                if var_total < 0: jlines.append((dict(vend)["payable_account_id"],round(-var_total,2),0,"Koreksi utang "+inv_no))
+                # RI non-posting -> utang penuh = seluruh nilai invoice + PPN
+                utang = round(direct_sub + ri_sub + tax,2)
                 jlines.append((dict(vend)["payable_account_id"],0,utang,"Utang "+inv_no))
                 jid = post_journal(c,"JE-"+inv_no,b["date"],"PURCHASE_INVOICE",pid,"Auto-posting "+inv_no,jlines)
                 c.execute("UPDATE purchase_invoices SET journal_entry_id=? WHERE id=?",(jid,pid))
@@ -1810,8 +2306,8 @@ class H(BaseHTTPRequestHandler):
                     d = calc_line(c,l); subtotal+=d["lt"]; cl.append(d)
                 tax = rp_int(subtotal*float(b.get("tax_rate",0))/100)
                 qno = b.get("quotation_number") or next_no(c,"SQ","sales_quotations","quotation_number")
-                cur = c.execute("INSERT INTO sales_quotations(quotation_number,transaction_date,customer_id,subtotal,tax_amount,total_amount,notes) VALUES(?,?,?,?,?,?,?)",
-                    (qno,b["date"],b["customer_id"],subtotal,tax,subtotal+tax,b.get("notes","")))
+                cur = c.execute("INSERT INTO sales_quotations(quotation_number,transaction_date,customer_id,subtotal,tax_amount,total_amount,notes,valid_until) VALUES(?,?,?,?,?,?,?,?)",
+                    (qno,b["date"],b["customer_id"],subtotal,tax,subtotal+tax,b.get("notes",""),b.get("valid_until","")))
                 qid = cur.lastrowid
                 for d in cl:
                     c.execute("INSERT INTO sales_quotation_lines(quotation_id,item_id,quantity,unit_price,discount_pct,discount_pct2,discount_amount,line_total,description,unit_code,unit_qty,unit_conv) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -1826,8 +2322,8 @@ class H(BaseHTTPRequestHandler):
                     d = calc_line(c,l); subtotal+=d["lt"]; cl.append(d)
                 tax = rp_int(subtotal*float(b.get("tax_rate",0))/100)
                 ono = b.get("order_number") or next_no(c,"SO","sales_orders","order_number")
-                cur = c.execute("INSERT INTO sales_orders(order_number,transaction_date,customer_id,quotation_id,subtotal,tax_amount,total_amount,notes) VALUES(?,?,?,?,?,?,?,?)",
-                    (ono,b["date"],b["customer_id"],b.get("quotation_id"),subtotal,tax,subtotal+tax,b.get("notes","")))
+                cur = c.execute("INSERT INTO sales_orders(order_number,transaction_date,customer_id,quotation_id,subtotal,tax_amount,total_amount,notes,ship_date,customer_po) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (ono,b["date"],b["customer_id"],b.get("quotation_id"),subtotal,tax,subtotal+tax,b.get("notes",""),b.get("ship_date",""),b.get("customer_po","")))
                 oid = cur.lastrowid
                 for d in cl:
                     c.execute("INSERT INTO sales_order_lines(sales_order_id,item_id,quantity,unit_price,discount_pct,discount_pct2,discount_amount,line_total,description,unit_code,unit_qty,unit_conv) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -1838,12 +2334,54 @@ class H(BaseHTTPRequestHandler):
             if path=="/api/sales-orders/close":
                 c.execute("UPDATE sales_orders SET status='CLOSED' WHERE id=?",(b["id"],))
                 c.commit(); return self._json({"ok":True})
+            if path=="/api/sales-orders/update":
+                # Edit ringan selalu boleh (catatan/tanggal/PO customer); baris hanya bila belum diproses
+                s = c.execute("SELECT * FROM sales_orders WHERE id=?",(b["id"],)).fetchone()
+                if not s: raise ValueError("SO tidak ditemukan")
+                if s["status"]=="CLOSED": raise ValueError("SO sudah closed")
+                processed = c.execute("""SELECT COUNT(*) n FROM delivery_order_lines dl JOIN delivery_orders d ON d.id=dl.delivery_order_id
+                    WHERE dl.sales_order_line_id IN (SELECT id FROM sales_order_lines WHERE sales_order_id=?) AND d.status='POSTED'""",(s["id"],)).fetchone()["n"]
+                processed += c.execute("SELECT COUNT(*) n FROM sales_invoice_lines WHERE sales_order_line_id IN (SELECT id FROM sales_order_lines WHERE sales_order_id=?)",(s["id"],)).fetchone()["n"]
+                if b.get("lines") is not None:
+                    if processed: raise ValueError("SO sudah diproses DO/Invoice: baris dikunci, hanya catatan/tanggal yang bisa diubah")
+                    for l in b["lines"]:
+                        d = calc_line(c,l)
+                        c.execute("UPDATE sales_order_lines SET quantity=?,unit_price=?,discount_pct=?,discount_pct2=?,discount_amount=?,line_total=?,description=? WHERE id=? AND sales_order_id=?",
+                            (d["base"],d["price"],d["p1"],d["p2"],d["disc"],d["lt"],d["desc"],l["id"],s["id"]))
+                    agg = c.execute("SELECT COALESCE(SUM(line_total),0) st FROM sales_order_lines WHERE sales_order_id=?",(s["id"],)).fetchone()["st"]
+                    c.execute("UPDATE sales_orders SET subtotal=?,tax_amount=?,total_amount=? WHERE id=?",
+                        (agg,rp_int(agg*float(b.get("tax_rate",s["tax_rate"] or 0))/100),agg+rp_int(agg*float(b.get("tax_rate",s["tax_rate"] or 0))/100),s["id"]))
+                c.execute("UPDATE sales_orders SET notes=?,ship_date=?,customer_po=? WHERE id=?",
+                    (b.get("notes",s["notes"]),b.get("ship_date",s["ship_date"] if "ship_date" in s.keys() else ""),b.get("customer_po",s["customer_po"] if "customer_po" in s.keys() else ""),s["id"]))
+                c.commit()
+                try: audit_log(me,"POST",path,200,ref_type="SALES_ORDER",ref_id=s["id"],detail=f"Update {s['order_number']}",ip=client_ip(self))
+                except Exception: pass
+                return self._json({"ok":True})
+            if path=="/api/sales-orders/delete":
+                s = c.execute("SELECT * FROM sales_orders WHERE id=?",(b["id"],)).fetchone()
+                if not s: raise ValueError("SO tidak ditemukan")
+                n = c.execute("SELECT COUNT(*) n FROM delivery_order_lines WHERE sales_order_line_id IN (SELECT id FROM sales_order_lines WHERE sales_order_id=?)",(s["id"],)).fetchone()["n"]
+                n += c.execute("SELECT COUNT(*) n FROM sales_invoice_lines WHERE sales_order_line_id IN (SELECT id FROM sales_order_lines WHERE sales_order_id=?)",(s["id"],)).fetchone()["n"]
+                if n: raise ValueError("SO sudah diproses, gunakan Close/Void — tidak bisa hapus")
+                c.execute("DELETE FROM sales_orders WHERE id=?",(s["id"],))
+                c.commit()
+                try: audit_log(me,"POST",path,200,ref_type="SALES_ORDER",ref_id=s["id"],
+                    before={"order_number":s["order_number"]},detail=f"Hapus {s['order_number']}",ip=client_ip(self))
+                except Exception: pass
+                return self._json({"ok":True})
+            if path=="/api/quotations/delete":
+                r = c.execute("SELECT * FROM sales_quotations WHERE id=?",(b["id"],)).fetchone()
+                if not r: raise ValueError("Penawaran tidak ditemukan")
+                if c.execute("SELECT COUNT(*) n FROM sales_orders WHERE quotation_id=?",(r["id"],)).fetchone()["n"]:
+                    raise ValueError("Penawaran sudah menjadi SO, gunakan Close")
+                c.execute("DELETE FROM sales_quotations WHERE id=?",(r["id"],))
+                c.commit(); return self._json({"ok":True})
             if path=="/api/deliveries":
                 cust = c.execute("SELECT * FROM customers WHERE id=?",(b["customer_id"],)).fetchone()
                 date = b["date"]; git_total=0; dl=[]
                 dno = b.get("delivery_number") or next_no(c,"DO","delivery_orders","delivery_number")
-                cur = c.execute("INSERT INTO delivery_orders(delivery_number,transaction_date,sales_order_id,customer_id) VALUES(?,?,?,?)",
-                    (dno,date,b.get("sales_order_id"),b["customer_id"]))
+                cur = c.execute("INSERT INTO delivery_orders(delivery_number,transaction_date,sales_order_id,customer_id,ship_to,ship_via) VALUES(?,?,?,?,?,?)",
+                    (dno,date,b.get("sales_order_id"),b["customer_id"],b.get("ship_to",""),b.get("ship_via","")))
                 did = cur.lastrowid
                 for l in b["lines"]:
                     it = c.execute("SELECT * FROM items WHERE id=?",(l["item_id"],)).fetchone()
@@ -1869,14 +2407,16 @@ class H(BaseHTTPRequestHandler):
                     if not wh: raise ValueError("Gudang wajib diisi")
                     h, unit = ship_out(c,it,wh,date,"DELIVERY_ORDER",did,base)
                     git_total += h
-                    dl.append((it,sol,base,price,h,unit,ucode,uqty,uconv,wh,l.get("description","")))
-                for it,sol,base,price,h,unit,ucode,uqty,conv,wh,desc in dl:
-                    c.execute("INSERT INTO delivery_order_lines(delivery_order_id,sales_order_line_id,item_id,warehouse_id,quantity,unit_price,cogs_total,description,unit_code,unit_qty,unit_conv) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                        (did,sol["id"] if sol else None,it["id"],wh,base,price,h,desc,ucode,uqty,conv))
+                    # Diskon dibawa proporsional dari SO agar tidak hilang di rantai DO->SI
+                    ldisc = round((sol["discount_amount"] or 0)*(base/max(sol["quantity"],0.0001)),2) if sol else 0
+                    dl.append((it,sol,base,price,h,unit,ucode,uqty,uconv,wh,l.get("description",""),ldisc))
+                for it,sol,base,price,h,unit,ucode,uqty,conv,wh,desc,ldisc in dl:
+                    c.execute("INSERT INTO delivery_order_lines(delivery_order_id,sales_order_line_id,item_id,warehouse_id,quantity,unit_price,cogs_total,description,unit_code,unit_qty,unit_conv,discount_amount) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (did,sol["id"] if sol else None,it["id"],wh,base,price,h,desc,ucode,uqty,conv,ldisc))
                 git_acc = acct(c,"13002")
                 inv_sum = {}
                 # kredit persediaan per akun barang (untuk jejak akurat)
-                for it,sol,base,price,h,unit,ucode,uqty,conv,wh,desc in dl:
+                for it,sol,base,price,h,unit,ucode,uqty,conv,wh,desc,ldisc in dl:
                     a = it["inventory_account_id"]
                     inv_sum[a] = inv_sum.get(a,0)+h
                 jl=[(git_acc,round(git_total,2),0,"DO "+dno)]
@@ -1910,27 +2450,14 @@ class H(BaseHTTPRequestHandler):
                         ("VOID","SALES_INVOICE",s["id"],rp_int(s["total_amount"]),me["username"],"PENDING",datetime.datetime.now().isoformat()))
                     c.commit(); return self._json({"ok":True,"need_approval":True,"msg":"Menunggu persetujuan MANAGER"})
                 date = b.get("date", datetime.date.today().isoformat())
-                jid = reverse_journal(c, s["journal_entry_id"], next_no(c,"JE","journal_entries","journal_number"), date, "Void "+s["invoice_number"])
-                for t in q(c,"SELECT * FROM inventory_transactions WHERE reference_type='SALES_INVOICE' AND reference_id=?", (s["id"],)):
-                    c.execute("INSERT INTO inventory_transactions(item_id,warehouse_id,transaction_date,reference_type,reference_id,qty_in,cogs_unit_price) VALUES(?,?,?,?,?,?,?)",
-                        (t["item_id"],t["warehouse_id"],date,"SALES_VOID",s["id"],t["qty_out"],t["cogs_unit_price"]))
-                    if is_fifo(c,t["item_id"]):
-                        add_layer(c,t["item_id"],t["warehouse_id"],date,"SALES_VOID",s["id"],t["qty_out"],t["cogs_unit_price"])
-                for t in q(c,"SELECT * FROM inventory_transactions WHERE reference_type='TRADE_IN' AND reference_id=?", (s["id"],)):
-                    if stock_of(c,t["item_id"],t["warehouse_id"]) < t["qty_in"]:
-                        raise ValueError("Stok barang tukar-tambah sudah terpakai, void dibatalkan")
-                    c.execute("INSERT INTO inventory_transactions(item_id,warehouse_id,transaction_date,reference_type,reference_id,qty_out,cogs_unit_price) VALUES(?,?,?,?,?,?,?)",
-                        (t["item_id"],t["warehouse_id"],date,"TRADE_VOID",s["id"],t["qty_in"],t["cogs_unit_price"]))
-                    if is_fifo(c,t["item_id"]):
-                        consume_fifo(c,t["item_id"],t["warehouse_id"],date,"TRADE_VOID",s["id"],t["qty_in"])
-                if "commission_journal_id" in s.keys() and s["commission_journal_id"]:
-                    reverse_journal(c, s["commission_journal_id"], next_no(c,"JE","journal_entries","journal_number"), date, "Void komisi "+s["invoice_number"])
-                for r in q(c,"SELECT delivery_order_line_id,quantity FROM sales_invoice_lines WHERE sales_invoice_id=? AND delivery_order_line_id IS NOT NULL",(s["id"],)):
-                    c.execute("UPDATE delivery_order_lines SET invoiced_qty=invoiced_qty-? WHERE id=?",(r["quantity"],r["delivery_order_line_id"]))
-                for so_id in {r["sales_order_id"] for r in q(c,"SELECT DISTINCT so.sales_order_id FROM sales_invoice_lines l JOIN sales_order_lines so ON so.id=l.sales_order_line_id WHERE l.sales_invoice_id=? AND l.sales_order_line_id IS NOT NULL",(s["id"],)) if r["sales_order_id"]}:
-                    refresh_doc_status(c,"SO",so_id)
-                c.execute("UPDATE sales_invoices SET status='VOID' WHERE id=?", (s["id"],))
-                c.commit(); return self._json({"ok":True,"reversal_journal":jid})
+                jid = void_sales(c, s["id"], date)
+                c.commit()
+                try: audit_log(me,"POST",path,200,ref_type="SALES_INVOICE",ref_id=s["id"],
+                    before={"status":s["status"],"total":s["total_amount"]},
+                    after={"status":"VOID","reversal_journal":jid},
+                    detail=f"Void {s['invoice_number']}",ip=client_ip(self))
+                except Exception: pass
+                return self._json({"ok":True,"reversal_journal":jid})
             if path=="/api/requisitions":
                 cur = c.execute("INSERT INTO purchase_requisitions(requisition_number,transaction_date,vendor_id,requester,notes) VALUES(?,?,?,?,?)",
                     (b.get("requisition_number") or next_no(c,"PR","purchase_requisitions","requisition_number"),b["date"],b.get("vendor_id"),b.get("requester",""),b.get("notes","")))
@@ -1950,8 +2477,9 @@ class H(BaseHTTPRequestHandler):
                     d = calc_line(c,l); subtotal+=d["lt"]; cl.append(d)
                 tax = rp_int(subtotal*float(b.get("tax_rate",0))/100)
                 ono = b.get("order_number") or next_no(c,"PO","purchase_orders","order_number")
-                cur = c.execute("INSERT INTO purchase_orders(order_number,transaction_date,vendor_id,requisition_id,subtotal,tax_amount,total_amount,notes) VALUES(?,?,?,?,?,?,?,?)",
-                    (ono,b["date"],b["vendor_id"],b.get("requisition_id"),subtotal,tax,subtotal+tax,b.get("notes","")))
+                cur = c.execute("INSERT INTO purchase_orders(order_number,transaction_date,vendor_id,requisition_id,subtotal,tax_amount,total_amount,notes,fob,terms,ship_via,ship_to,expected_date) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (ono,b["date"],b["vendor_id"],b.get("requisition_id"),subtotal,tax,subtotal+tax,b.get("notes",""),
+                     b.get("fob",""),b.get("terms",""),b.get("ship_via",""),b.get("ship_to",""),b.get("expected_date","")))
                 oid = cur.lastrowid
                 for d in cl:
                     c.execute("INSERT INTO purchase_order_lines(purchase_order_id,item_id,warehouse_id,quantity,unit_price,line_total,description,unit_code,unit_qty,unit_conv) VALUES(?,?,?,?,?,?,?,?,?,?)",
@@ -1961,6 +2489,21 @@ class H(BaseHTTPRequestHandler):
                 c.commit(); return self._json({"ok":True,"order":ono})
             if path=="/api/purchase-orders/close":
                 c.execute("UPDATE purchase_orders SET status='CLOSED' WHERE id=?",(b["id"],))
+                c.commit(); return self._json({"ok":True})
+            if path=="/api/purchase-orders/delete":
+                r = c.execute("SELECT * FROM purchase_orders WHERE id=?",(b["id"],)).fetchone()
+                if not r: raise ValueError("PO tidak ditemukan")
+                n = c.execute("SELECT COUNT(*) n FROM receive_item_lines WHERE purchase_order_line_id IN (SELECT id FROM purchase_order_lines WHERE purchase_order_id=?)",(r["id"],)).fetchone()["n"]
+                n += c.execute("SELECT COUNT(*) n FROM purchase_invoice_lines WHERE purchase_order_line_id IN (SELECT id FROM purchase_order_lines WHERE purchase_order_id=?)",(r["id"],)).fetchone()["n"]
+                if n: raise ValueError("PO sudah diproses, gunakan Close — tidak bisa hapus")
+                c.execute("DELETE FROM purchase_orders WHERE id=?",(r["id"],))
+                c.commit(); return self._json({"ok":True})
+            if path=="/api/requisitions/delete":
+                r = c.execute("SELECT * FROM purchase_requisitions WHERE id=?",(b["id"],)).fetchone()
+                if not r: raise ValueError("PR tidak ditemukan")
+                if c.execute("SELECT COUNT(*) n FROM purchase_orders WHERE requisition_id=?",(r["id"],)).fetchone()["n"]:
+                    raise ValueError("PR sudah menjadi PO, gunakan Close")
+                c.execute("DELETE FROM purchase_requisitions WHERE id=?",(r["id"],))
                 c.commit(); return self._json({"ok":True})
             if path=="/api/receives":
                 vend = c.execute("SELECT * FROM vendors WHERE id=?",(b["vendor_id"],)).fetchone()
@@ -1981,29 +2524,19 @@ class H(BaseHTTPRequestHandler):
                     lt = round(float(l["qty"])*price,2); subtotal+=lt
                     rl.append((it,pol,base,price,lt,l.get("unit_code",it["base_unit"]),float(l["qty"]),conv,int(l.get("warehouse_id") or (pol["warehouse_id"] if pol else 0)),l.get("description","")))
                 rno = b.get("receive_number") or next_no(c,"RI","receive_items","receive_number")
-                cur = c.execute("INSERT INTO receive_items(receive_number,transaction_date,purchase_order_id,vendor_id,subtotal) VALUES(?,?,?,?,?)",
-                    (rno,date,b.get("purchase_order_id"),b["vendor_id"],subtotal))
-                rid = cur.lastrowid; inv_sum={}
+                cur = c.execute("INSERT INTO receive_items(receive_number,transaction_date,purchase_order_id,vendor_id,subtotal,receipt_no,ship_via) VALUES(?,?,?,?,?,?,?)",
+                    (rno,date,b.get("purchase_order_id"),b["vendor_id"],subtotal,b.get("receipt_no",""),b.get("ship_via","")))
+                rid = cur.lastrowid
+                # Accurate 5: Penerimaan Barang non-posting nilai (hanya qty masuk).
+                # Nilai persediaan + avg_cost diakui saat Purchase Invoice, bukan saat terima.
                 for it,pol,base,price,lt,ucode,uqty,conv,wh,desc in rl:
                     if not wh: raise ValueError("Gudang wajib diisi")
                     c.execute("INSERT INTO receive_item_lines(receive_id,purchase_order_line_id,item_id,warehouse_id,quantity,unit_price,line_total,description,unit_code,unit_qty,unit_conv) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                         (rid,pol["id"] if pol else None,it["id"],wh,base,price,lt,desc,ucode,uqty,conv))
-                    bprice = round(price/conv,2)
-                    acc = it["inventory_account_id"] or acct(c,"13001")
-                    inv_sum[acc] = inv_sum.get(acc,0)+round(base*bprice,2)
                     if it["item_type"]!="INVENTORY":
                         continue
+                    bprice = round(price/conv,2)
                     receive_in(c,it,wh,date,"RECEIVE_ITEM",rid,base,bprice)
-                    old_s = stock_of(c,it["id"]) - base
-                    old_c = it["avg_cost"] or bprice
-                    new_avg = (old_s*old_c + base*bprice)/max(old_s+base,0.0001) if old_s>0 else bprice
-                    c.execute("UPDATE items SET avg_cost=?,purchase_price=? WHERE id=?",(new_avg,bprice,it["id"]))
-                jl=[]
-                for a,amt in inv_sum.items(): jl.append((a,round(amt,2),0,"Terima "+rno))
-                jl.append((dict(vend)["payable_account_id"],0,round(subtotal,2),"Utang terima "+rno))
-                if inv_sum:
-                    jid = post_journal(c,"JE-"+rno,date,"RECEIVE_ITEM",rid,"Penerimaan "+rno,jl)
-                    c.execute("UPDATE receive_items SET journal_entry_id=? WHERE id=?",(jid,rid))
                 if b.get("purchase_order_id"): refresh_doc_status(c,"PO",b["purchase_order_id"])
                 c.commit(); return self._json({"ok":True,"receive":rno})
             if path=="/api/receives/void":
@@ -2035,20 +2568,14 @@ class H(BaseHTTPRequestHandler):
                         ("VOID","PURCHASE_INVOICE",s["id"],rp_int(s["total_amount"]),me["username"],"PENDING",datetime.datetime.now().isoformat()))
                     c.commit(); return self._json({"ok":True,"need_approval":True,"msg":"Menunggu persetujuan MANAGER"})
                 date = b.get("date", datetime.date.today().isoformat())
-                ins = q(c,"SELECT * FROM inventory_transactions WHERE reference_type='PURCHASE_INVOICE' AND reference_id=?", (s["id"],))
-                for t in ins:
-                    if stock_of(c,t["item_id"],t["warehouse_id"]) < t["qty_in"]:
-                        raise ValueError("Stok tidak cukup untuk void (barang sudah terjual)")
-                jid = reverse_journal(c, s["journal_entry_id"], next_no(c,"JE","journal_entries","journal_number"), date, "Void "+s["invoice_number"])
-                for t in ins:
-                    c.execute("INSERT INTO inventory_transactions(item_id,warehouse_id,transaction_date,reference_type,reference_id,qty_out,cogs_unit_price) VALUES(?,?,?,?,?,?,?)",
-                        (t["item_id"],t["warehouse_id"],date,"PURCHASE_VOID",s["id"],t["qty_in"],t["cogs_unit_price"]))
-                    if is_fifo(c,t["item_id"]):
-                        consume_fifo(c,t["item_id"],t["warehouse_id"],date,"PURCHASE_VOID",s["id"],t["qty_in"])
-                for r in q(c,"SELECT receive_line_id,quantity FROM purchase_invoice_lines WHERE purchase_invoice_id=? AND receive_line_id IS NOT NULL",(s["id"],)):
-                    c.execute("UPDATE receive_item_lines SET billed_qty=billed_qty-? WHERE id=?",(r["quantity"],r["receive_line_id"]))
-                c.execute("UPDATE purchase_invoices SET status='VOID' WHERE id=?", (s["id"],))
-                c.commit(); return self._json({"ok":True,"reversal_journal":jid})
+                jid = void_purchase(c, s["id"], date)
+                c.commit()
+                try: audit_log(me,"POST",path,200,ref_type="PURCHASE_INVOICE",ref_id=s["id"],
+                    before={"status":s["status"],"total":s["total_amount"]},
+                    after={"status":"VOID","reversal_journal":jid},
+                    detail=f"Void {s['invoice_number']}",ip=client_ip(self))
+                except Exception: pass
+                return self._json({"ok":True,"reversal_journal":jid})
             if path=="/api/sales/returns":
                 s = c.execute("SELECT * FROM sales_invoices WHERE id=?", (b["sales_invoice_id"],)).fetchone()
                 if not s or s["status"]=="VOID": raise ValueError("Invoice tidak valid")
@@ -2062,8 +2589,11 @@ class H(BaseHTTPRequestHandler):
                     qty = float(l["qty"])
                     maxq = inv_l["quantity"] - returned_qty(c,"SALES",s["id"],it["id"])
                     if qty <= 0 or qty > maxq+0.005: raise ValueError(f"Qty retur {it['item_code']} max {maxq}")
-                    lt = rp_int(qty*inv_l["unit_price"]); subtotal += lt
-                    rlines.append((it, qty, inv_l["unit_price"], lt, l.get("description", inv_l["description"] if "description" in inv_l.keys() else "")))
+                    gross = rp_int(qty*inv_l["unit_price"])
+                    inv_disc = inv_l["discount_amount"] if "discount_amount" in inv_l.keys() else 0
+                    dl_disc = rp_int((inv_disc or 0)*qty/max(inv_l["quantity"],0.0001))
+                    lt = gross-dl_disc; subtotal += lt
+                    rlines.append((it, qty, inv_l["unit_price"], lt, dl_disc, l.get("description", inv_l["description"] if "description" in inv_l.keys() else "")))
                 tax = rp_int(subtotal*float(b.get("tax_rate", s["tax_amount"]/s["subtotal"]*100 if s["subtotal"] else 0))/100)
                 total = subtotal+tax
                 if outstanding_of(c,"AR",s["id"],s["total_amount"]) < total:
@@ -2072,11 +2602,12 @@ class H(BaseHTTPRequestHandler):
                 cur = c.execute("INSERT INTO sales_returns(return_number,sales_invoice_id,transaction_date,subtotal,tax_amount,total_amount) VALUES(?,?,?,?,?,?)",
                     (ret_no,s["id"],date,subtotal,tax,total))
                 rid = cur.lastrowid; hpp=0
-                sales_back={}; inv_back={}; cogs_back={}
-                for it,qty,price,lt,desc in rlines:
+                sales_back={}; inv_back={}; cogs_back={}; disc_back=0
+                for it,qty,price,lt,ddisc,desc in rlines:
                     c.execute("INSERT INTO sales_return_lines(sales_return_id,item_id,warehouse_id,quantity,unit_price,line_total,description) VALUES(?,?,?,?,?,?,?)",
                         (rid,it["id"],b["warehouse_id"],qty,price,lt,desc))
-                    sales_back[it["sales_account_id"]] = sales_back.get(it["sales_account_id"],0)+lt
+                    sales_back[it["sales_account_id"]] = sales_back.get(it["sales_account_id"],0)+lt+ddisc
+                    disc_back += ddisc
                     if it["item_type"]=="INVENTORY":
                         cost = it["avg_cost"] or 0; hpp += cost*qty
                         inv_back[it["inventory_account_id"]] = inv_back.get(it["inventory_account_id"],0)+cost*qty
@@ -2086,7 +2617,8 @@ class H(BaseHTTPRequestHandler):
                         if is_fifo(c,it["id"]):
                             add_layer(c,it["id"],b["warehouse_id"],date,"SALES_RETURN",rid,qty,cost)
                 jl=[]
-                for acc,amt in sales_back.items(): jl.append((acc,amt,0,"Retur "+ret_no))
+                for acc,amt in sales_back.items(): jl.append((acc,amt,0,"Retur bruto "+ret_no))
+                if disc_back: jl.append((acct(c,"41002"),0,disc_back,"Diskon retur "+ret_no))
                 if tax: jl.append((acct(c,"22001"),tax,0,"PPN retur "+ret_no))
                 jl.append((cust["receivable_account_id"],0,total,"Kurangi piutang "+ret_no))
                 for acc,amt in inv_back.items(): jl.append((acc,amt,0,"Stok kembali "+ret_no))
@@ -2152,33 +2684,182 @@ class H(BaseHTTPRequestHandler):
             if path=="/api/vendors/limit":
                 c.execute("UPDATE vendors SET credit_limit=? WHERE id=?", (float(b["credit_limit"]), b["id"]))
                 c.commit(); return self._json({"ok":True})
+            if path=="/api/vendors/update":
+                v = c.execute("SELECT * FROM vendors WHERE id=?",(b.get("id"),)).fetchone()
+                if not v: raise ValueError("Vendor tidak ditemukan")
+                c.execute("UPDATE vendors SET vendor_name=?,email=? WHERE id=?",
+                    (b.get("vendor_name",v["vendor_name"]),b.get("email",v["email"]),v["id"]))
+                c.commit(); return self._json({"ok":True})
+            if path=="/api/customers/update":
+                cu = c.execute("SELECT * FROM customers WHERE id=?",(b.get("id"),)).fetchone()
+                if not cu: raise ValueError("Pelanggan tidak ditemukan")
+                c.execute("UPDATE customers SET customer_name=?,email=? WHERE id=?",
+                    (b.get("customer_name",cu["customer_name"]),b.get("email",cu["email"]),cu["id"]))
+                c.commit(); return self._json({"ok":True})
             if path=="/api/customers/limit":
                 c.execute("UPDATE customers SET credit_limit=?,terms=?,term_days=? WHERE id=?",
                     (float(b.get("credit_limit",0)), b.get("terms",""), int(b.get("term_days",0)), b["id"]))
                 c.commit(); return self._json({"ok":True})
-            if path=="/api/stock/opname":
-                it = c.execute("SELECT * FROM items WHERE id=?", (b["item_id"],)).fetchone()
-                if not it or it["item_type"]!="INVENTORY": raise ValueError("Pilih barang persediaan")
+            if path in ("/api/stock/opname","/api/stock-adjustments"):
                 date = b.get("date", datetime.date.today().isoformat())
-                sys_qty = stock_of(c, it["id"], b["warehouse_id"])
-                diff = round(float(b["actual_qty"]) - sys_qty, 2)
-                if abs(diff) < 0.005: raise ValueError("Tidak ada selisih")
-                cost = it["avg_cost"] or 0; val = round(abs(diff)*cost, 2)
-                if diff > 0:
-                    c.execute("INSERT INTO inventory_transactions(item_id,warehouse_id,transaction_date,reference_type,qty_in,cogs_unit_price) VALUES(?,?,?,?,?,?)",
-                        (it["id"],b["warehouse_id"],date,"OPNAME",diff,cost))
-                    if is_fifo(c,it["id"]):
-                        add_layer(c,it["id"],b["warehouse_id"],date,"OPNAME",None,diff,cost)
-                    jid = post_journal(c,next_no(c,"JE","journal_entries","journal_number"),date,"OPNAME",None,
-                        f"Opname {it['item_code']} surplus {diff}",[(it["inventory_account_id"],val,0,"Surplus"),(acct(c,"71001"),0,val,"Surplus")])
+                wid = b.get("warehouse_id")
+                # Normalisasi lines: dukung format lama single-item & format baru multi-line frontend
+                lines = b.get("lines") or []
+                if not lines and b.get("item_id"):
+                    aq = b.get("actual_qty", b.get("fisik_qty", b.get("quantity", 0)))
+                    lines = [{"item_id":b["item_id"],"warehouse_id":b.get("warehouse_id"),"actual_qty":aq,
+                              "fisik_qty":aq,"quantity":aq,"difference":b.get("difference")}]
+                if not lines: raise ValueError("Tidak ada baris opname/adjustment")
+                if not wid: wid = lines[0].get("warehouse_id")
+                if not wid: raise ValueError("Gudang wajib diisi")
+                kind = (b.get("type") or "OPNAME").upper()
+                jl_sur=[]; jl_min=[]; total_val=0; nline=0; signed_total=0
+                ref_no = next_no(c,"OPN","inventory_transactions","id")
+                for l in lines:
+                    it = c.execute("SELECT * FROM items WHERE id=?", (l.get("item_id"),)).fetchone()
+                    if not it or it["item_type"]!="INVENTORY": raise ValueError("Pilih barang persediaan")
+                    w = int(l.get("warehouse_id") or wid)
+                    cost = rp_int(it["avg_cost"] or 0)
+                    if kind in ("IN","OUT","ADJUST"):
+                        qty = round(float(l.get("quantity", l.get("difference", 0)) or 0),2)
+                    else:
+                        sys_qty = stock_of(c, it["id"], w)
+                        if "difference" in l and l.get("difference") is not None and not l.get("actual_qty") and not l.get("fisik_qty"):
+                            diff = round(float(l["difference"] or 0),2)
+                        else:
+                            aq = l.get("actual_qty", l.get("fisik_qty", l.get("quantity", sys_qty)))
+                            diff = round(float(aq or 0) - sys_qty, 2)
+                        qty = diff
+                    if abs(qty) < 0.005: continue
+                    val = rp_int(abs(qty)*cost)
+                    if qty > 0:
+                        c.execute("INSERT INTO inventory_transactions(item_id,warehouse_id,transaction_date,reference_type,reference_id,qty_in,cogs_unit_price) VALUES(?,?,?,?,?,?,?)",
+                            (it["id"],w,date,"OPNAME" if kind=="OPNAME" else "ADJUST",None,qty,cost))
+                        if is_fifo(c,it["id"]):
+                            add_layer(c,it["id"],w,date,"OPNAME" if kind=="OPNAME" else "ADJUST",None,qty,cost)
+                        jl_sur.append((it["inventory_account_id"],val,f"Surplus {it['item_code']}"))
+                    else:
+                        if is_fifo(c,it["id"]):
+                            consume_fifo(c,it["id"],w,date,"OPNAME" if kind=="OPNAME" else "ADJUST",None,-qty)
+                        c.execute("INSERT INTO inventory_transactions(item_id,warehouse_id,transaction_date,reference_type,reference_id,qty_out,cogs_unit_price) VALUES(?,?,?,?,?,?,?)",
+                            (it["id"],w,date,"OPNAME" if kind=="OPNAME" else "ADJUST",None,-qty,cost))
+                        jl_min.append((it["inventory_account_id"],val,f"Selisih {it['item_code']}"))
+                    total_val += val; nline += 1; signed_total += qty
+                if not nline: raise ValueError("Tidak ada selisih")
+                # Jurnal agregat per akun agar seimbang: surplus Dr Persediaan/Cr 71001, minus Dr 72001/Cr Persediaan
+                min_by_acc={}
+                for acc,amt,m in jl_min: min_by_acc[acc]=min_by_acc.get(acc,0)+amt
+                # bangun ulang jl agar seimbang: Dr persediaan (surplus) + Dr selisih, Cr pendapatan + Cr persediaan (minus)
+                jl=[]
+                sur_by_acc={}
+                for acc,amt,m in jl_sur: sur_by_acc[acc]=sur_by_acc.get(acc,0)+amt
+                for acc,amt in sur_by_acc.items(): jl.append((acc,amt,0,"Surplus "+ref_no))
+                if sur_by_acc: jl.append((acct(c,"71001"),0,sum(sur_by_acc.values()),"Surplus "+ref_no))
+                for acc,amt in min_by_acc.items(): jl.append((acct(c,"72001"),amt,0,"Selisih "+ref_no))
+                for acc,amt in min_by_acc.items(): jl.append((acc,0,amt,"Selisih "+ref_no))
+                jid = post_journal(c,next_no(c,"JE","journal_entries","journal_number"),date,"OPNAME",None,
+                    (b.get("note") or f"Opname {ref_no} ({nline} baris)"),jl)
+                c.commit()
+                try: audit_log(me,"POST",path,200,ref_type="OPNAME",ref_id=jid,
+                    after={"lines":nline,"value":total_val},detail=f"Opname {ref_no} {nline} baris")
+                except Exception: pass
+                return self._json({"ok":True,"lines":nline,"value":total_val,"journal":jid,"diff":round(signed_total,2)})
+            if path=="/api/returns":
+                # Alias CN/DN frontend lama -> teruskan ke returns penjualan/pembelian
+                t = str(b.get("type","SALES")).upper()
+                if t in ("VENDOR","PURCHASE","AP","DN","PURCHASE_RETURN"):
+                    if not b.get("purchase_invoice_id") and b.get("invoice_id"):
+                        b["purchase_invoice_id"] = b["invoice_id"]
+                    b["purchase_invoice_id"] = b.get("purchase_invoice_id")
+                    # validasi ringan lalu lempar ke handler purchases/returns via pengulangan logika inti:
+                    s = c.execute("SELECT * FROM purchase_invoices WHERE id=?", (b.get("purchase_invoice_id"),)).fetchone()
+                    if not s or s["status"]=="VOID": raise ValueError("Tagihan tidak valid")
+                    date = b.get("date", datetime.date.today().isoformat())
+                    vend = c.execute("SELECT * FROM vendors WHERE id=?", (s["vendor_id"],)).fetchone()
+                    subtotal=0; rlines=[]
+                    for l in b.get("lines",[]):
+                        it = c.execute("SELECT * FROM items WHERE id=?", (l["item_id"],)).fetchone()
+                        inv_l = c.execute("SELECT * FROM purchase_invoice_lines WHERE purchase_invoice_id=? AND item_id=?", (s["id"], it["id"])).fetchone()
+                        if not inv_l: raise ValueError(f"{it['item_code']} tidak ada di tagihan ini")
+                        qty = float(l.get("qty", l.get("quantity",0)))
+                        maxq = inv_l["quantity"] - returned_qty(c,"PURCHASE",s["id"],it["id"])
+                        if qty <= 0 or qty > maxq+0.005: raise ValueError(f"Qty retur {it['item_code']} max {maxq}")
+                        if it["item_type"]=="INVENTORY" and stock_of(c,it["id"],b.get("warehouse_id")) < qty:
+                            raise ValueError(f"Stok {it['item_code']} kurang untuk diretur")
+                        lt = rp_int(qty*inv_l["unit_price"]); subtotal += lt
+                        rlines.append((it, qty, inv_l["unit_price"], lt, l.get("description","")))
+                    tax = rp_int(subtotal*float(b.get("tax_rate",0))/100); total = subtotal+tax
+                    if outstanding_of(c,"AP",s["id"],s["total_amount"]) < total:
+                        raise ValueError("Retur melebihi sisa utang (sudah dibayar)")
+                    ret_no = next_no(c,"RP","purchase_returns","return_number")
+                    cur = c.execute("INSERT INTO purchase_returns(return_number,purchase_invoice_id,transaction_date,subtotal,tax_amount,total_amount) VALUES(?,?,?,?,?,?)",
+                        (ret_no,s["id"],date,subtotal,tax,total))
+                    rid = cur.lastrowid
+                    for it,qty,price,lt,desc in rlines:
+                        c.execute("INSERT INTO purchase_return_lines(purchase_return_id,item_id,warehouse_id,quantity,unit_price,line_total,description) VALUES(?,?,?,?,?,?,?)",
+                            (rid,it["id"],b.get("warehouse_id"),qty,price,lt,desc))
+                        if it["item_type"]=="INVENTORY":
+                            c.execute("INSERT INTO inventory_transactions(item_id,warehouse_id,transaction_date,reference_type,reference_id,qty_out,cogs_unit_price) VALUES(?,?,?,?,?,?,?)",
+                                (it["id"],b.get("warehouse_id"),date,"PURCHASE_RETURN",rid,qty,it["avg_cost"] or price))
+                            if is_fifo(c,it["id"]):
+                                consume_fifo(c,it["id"],b.get("warehouse_id"),date,"PURCHASE_RETURN",rid,qty)
+                    jl=[(vend["payable_account_id"],total,0,"Kurangi utang "+ret_no),(acct(c,"13001"),0,subtotal,"Stok retur "+ret_no)]
+                    if tax: jl.append((acct(c,"14001"),0,tax,"PPN retur "+ret_no))
+                    jid = post_journal(c,"JE-"+ret_no,date,"PURCHASE_RETURN",rid,"Retur pembelian "+ret_no,jl)
+                    c.execute("UPDATE purchase_returns SET journal_entry_id=? WHERE id=?",(jid,rid))
+                    refresh_status(c,"AP",s["id"])
+                    c.commit(); return self._json({"ok":True,"return":ret_no,"total":total})
                 else:
-                    if is_fifo(c,it["id"]):
-                        consume_fifo(c,it["id"],b["warehouse_id"],date,"OPNAME",None,-diff)
-                    c.execute("INSERT INTO inventory_transactions(item_id,warehouse_id,transaction_date,reference_type,qty_out,cogs_unit_price) VALUES(?,?,?,?,?,?)",
-                        (it["id"],b["warehouse_id"],date,"OPNAME",-diff,cost))
-                    jid = post_journal(c,next_no(c,"JE","journal_entries","journal_number"),date,"OPNAME",None,
-                        f"Opname {it['item_code']} minus {-diff}",[(acct(c,"72001"),val,0,"Selisih"),(it["inventory_account_id"],0,val,"Selisih")])
-                c.commit(); return self._json({"ok":True,"diff":diff,"value":val})
+                    if not b.get("sales_invoice_id") and b.get("invoice_id"):
+                        b["sales_invoice_id"] = b["invoice_id"]
+                    s = c.execute("SELECT * FROM sales_invoices WHERE id=?", (b.get("sales_invoice_id"),)).fetchone()
+                    if not s or s["status"]=="VOID": raise ValueError("Invoice tidak valid")
+                    date = b.get("date", datetime.date.today().isoformat())
+                    cust = c.execute("SELECT * FROM customers WHERE id=?", (s["customer_id"],)).fetchone()
+                    subtotal=0; rlines=[]
+                    for l in b.get("lines",[]):
+                        it = c.execute("SELECT * FROM items WHERE id=?", (l["item_id"],)).fetchone()
+                        inv_l = c.execute("SELECT * FROM sales_invoice_lines WHERE sales_invoice_id=? AND item_id=?", (s["id"], it["id"])).fetchone()
+                        if not inv_l: raise ValueError(f"{it['item_code']} tidak ada di invoice ini")
+                        qty = float(l.get("qty", l.get("quantity",0)))
+                        maxq = inv_l["quantity"] - returned_qty(c,"SALES",s["id"],it["id"])
+                        if qty <= 0 or qty > maxq+0.005: raise ValueError(f"Qty retur {it['item_code']} max {maxq}")
+                        gross = rp_int(qty*inv_l["unit_price"])
+                        inv_disc = inv_l["discount_amount"] if "discount_amount" in inv_l.keys() else 0
+                        ddisc = rp_int((inv_disc or 0)*qty/max(inv_l["quantity"],0.0001))
+                        lt = gross-ddisc; subtotal += lt
+                        rlines.append((it, qty, inv_l["unit_price"], lt, ddisc, l.get("description","")))
+                    tax = rp_int(subtotal*float(b.get("tax_rate",0))/100); total = subtotal+tax
+                    if outstanding_of(c,"AR",s["id"],s["total_amount"]) < total:
+                        raise ValueError("Retur melebihi sisa piutang (sudah dibayar)")
+                    ret_no = next_no(c,"RS","sales_returns","return_number")
+                    cur = c.execute("INSERT INTO sales_returns(return_number,sales_invoice_id,transaction_date,subtotal,tax_amount,total_amount) VALUES(?,?,?,?,?,?)",
+                        (ret_no,s["id"],date,subtotal,tax,total))
+                    rid = cur.lastrowid; hpp=0; sales_back={}; inv_back={}; cogs_back={}; disc_back=0
+                    for it,qty,price,lt,ddisc,desc in rlines:
+                        c.execute("INSERT INTO sales_return_lines(sales_return_id,item_id,warehouse_id,quantity,unit_price,line_total,description) VALUES(?,?,?,?,?,?,?)",
+                            (rid,it["id"],b.get("warehouse_id"),qty,price,lt,desc))
+                        sales_back[it["sales_account_id"]] = sales_back.get(it["sales_account_id"],0)+lt+ddisc
+                        disc_back += ddisc
+                        if it["item_type"]=="INVENTORY":
+                            cost = it["avg_cost"] or 0; hpp += cost*qty
+                            inv_back[it["inventory_account_id"]] = inv_back.get(it["inventory_account_id"],0)+cost*qty
+                            cogs_back[it["cogs_account_id"]] = cogs_back.get(it["cogs_account_id"],0)+cost*qty
+                            c.execute("INSERT INTO inventory_transactions(item_id,warehouse_id,transaction_date,reference_type,reference_id,qty_in,cogs_unit_price) VALUES(?,?,?,?,?,?,?)",
+                                (it["id"],b.get("warehouse_id"),date,"SALES_RETURN",rid,qty,cost))
+                            if is_fifo(c,it["id"]):
+                                add_layer(c,it["id"],b.get("warehouse_id"),date,"SALES_RETURN",rid,qty,cost)
+                    jl=[]
+                    for acc,amt in sales_back.items(): jl.append((acc,amt,0,"Retur bruto "+ret_no))
+                    if disc_back: jl.append((acct(c,"41002"),0,disc_back,"Diskon retur "+ret_no))
+                    if tax: jl.append((acct(c,"22001"),tax,0,"PPN retur "+ret_no))
+                    jl.append((cust["receivable_account_id"],0,total,"Kurangi piutang "+ret_no))
+                    for acc,amt in inv_back.items(): jl.append((acc,amt,0,"Stok kembali "+ret_no))
+                    for acc,amt in cogs_back.items(): jl.append((acc,0,amt,"HPP kembali "+ret_no))
+                    jid = post_journal(c,"JE-"+ret_no,date,"SALES_RETURN",rid,"Retur penjualan "+ret_no,jl)
+                    c.execute("UPDATE sales_returns SET journal_entry_id=? WHERE id=?",(jid,rid))
+                    refresh_status(c,"AR",s["id"])
+                    c.commit(); return self._json({"ok":True,"return":ret_no,"total":total})
             if path=="/api/stock/transfer":
                 it = c.execute("SELECT * FROM items WHERE id=?", (b["item_id"],)).fetchone()
                 if not it or it["item_type"]!="INVENTORY": raise ValueError("Pilih barang persediaan")
@@ -2194,7 +2875,24 @@ class H(BaseHTTPRequestHandler):
                     (it["id"],b["to_warehouse"],date,"TRANSFER",qty,cost))
                 if is_fifo(c,it["id"]):
                     add_layer(c,it["id"],b["to_warehouse"],date,"TRANSFER",None,qty,cost)
-                c.commit(); return self._json({"ok":True})
+                tno = next_no(c,"TRF","stock_transfers","transfer_number")
+                c.execute("INSERT INTO stock_transfers(transfer_number,transaction_date,item_id,from_warehouse,to_warehouse,quantity,unit_cost,note) VALUES(?,?,?,?,?,?,?,?)",
+                    (tno,date,it["id"],b["from_warehouse"],b["to_warehouse"],qty,cost,b.get("note","")))
+                ship = rp_int(b.get("ship_cost",0))
+                if ship > 0:
+                    # Ongkir transfer: beban terpisah, tidak campur nilai stok (Accurate: biaya kirim)
+                    if not b.get("cash_account_id") or not b.get("ship_cost_account_id"):
+                        raise ValueError("Ongkir butuh akun kas + akun beban kirim")
+                    post_journal(c,next_no(c,"JE","journal_entries","journal_number"),date,"TRANSFER_COST",None,
+                        f"Ongkir {tno}",[(int(b["ship_cost_account_id"]),ship,0,"Ongkir"),(int(b["cash_account_id"]),0,ship,"Kas")])
+                    c.execute("UPDATE stock_transfers SET ship_cost=?,ship_cost_account_id=? WHERE transfer_number=?",
+                        (ship,int(b["ship_cost_account_id"]),tno))
+                c.commit()
+                try: audit_log(me,"POST",path,200,ref_type="TRANSFER",ref_id=None,
+                    after={"transfer":tno,"item":it["item_code"],"from":b["from_warehouse"],"to":b["to_warehouse"],"qty":qty,"ship_cost":ship},
+                    detail=f"Transfer {it['item_code']} {qty}",ip=client_ip(self))
+                except Exception: pass
+                return self._json({"ok":True,"transfer":tno})
             if path=="/api/payments":
                 kind=b["kind"]; cash=int(b["cash_account_id"])
                 allocs = b.get("allocations") or []
@@ -2219,16 +2917,26 @@ class H(BaseHTTPRequestHandler):
                 else:
                     vend=c.execute("SELECT * FROM vendors WHERE id=?",(b["contact_id"],)).fetchone()
                     jid=post_journal(c,b.get("payment_number") or next_no(c,"PAY","payments","payment_number"),b["date"],"VENDOR_PAYMENT",None,f"Bayar {vend['vendor_name']}",[(vend["payable_account_id"],amount,0,"Utang"),(cash,0,amount,"Kas")])
-                cur=c.execute("INSERT INTO payments(payment_number,transaction_date,kind,contact_id,cash_account_id,amount,note,journal_entry_id) VALUES(?,?,?,?,?,?,?,?)",
-                    ("PAY-"+str(jid),b["date"],kind,b["contact_id"],cash,amount,b.get("note",""),jid))
+                cur=c.execute("INSERT INTO payments(payment_number,transaction_date,kind,contact_id,cash_account_id,amount,note,journal_entry_id,pph23_no,pph23_amount) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    ("PAY-"+str(jid),b["date"],kind,b["contact_id"],cash,amount,b.get("note",""),jid,b.get("pph23_no",""),rp_int(b.get("pph23_amount",0))))
                 pid = cur.lastrowid
                 for a in allocs:
                     c.execute("INSERT INTO payment_allocations(payment_id,invoice_type,invoice_id,amount) VALUES(?,?,?,?)",(pid,kind,a["invoice_id"],float(a["amount"])))
                     refresh_status(c,kind,a["invoice_id"])
-                c.commit(); return self._json({"ok":True,"amount":amount})
+                c.commit()
+                try: audit_log(me,"POST",path,200,ref_type="PAYMENT",ref_id=pid,
+                    after={"kind":kind,"amount":amount,"allocs":len(allocs)},
+                    detail=f"Payment {kind} {amount}",ip=client_ip(self))
+                except Exception: pass
+                return self._json({"ok":True,"amount":amount})
             if path=="/api/assets":
-                c.execute("INSERT INTO fixed_assets(asset_code,asset_name,purchase_date,cost,useful_months,method,asset_account_id,depr_expense_account_id,accum_account_id) VALUES(?,?,?,?,?,?,?,?,?)",
-                    (b["asset_code"],b["asset_name"],b["purchase_date"],float(b["cost"]),int(b.get("useful_months",48)),b.get("method","STRAIGHT"),b.get("asset_account_id"),b.get("depr_expense_account_id"),b.get("accum_account_id")))
+                um = int(b.get("useful_months",0) or 0)
+                if b.get("type_id") and not um:
+                    t = c.execute("SELECT useful_months FROM asset_types WHERE id=?",(b["type_id"],)).fetchone()
+                    if t: um = t["useful_months"]
+                if not um: um = 48
+                c.execute("INSERT INTO fixed_assets(asset_code,asset_name,purchase_date,cost,useful_months,method,asset_account_id,depr_expense_account_id,accum_account_id,type_id,status) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    (b["asset_code"],b["asset_name"],b["purchase_date"],float(b["cost"]),um,b.get("method","STRAIGHT"),b.get("asset_account_id"),b.get("depr_expense_account_id"),b.get("accum_account_id"),b.get("type_id"),"ACTIVE"))
                 c.commit(); return self._json({"ok":True})
             if path=="/api/assets/depreciate":
                 a=c.execute("SELECT * FROM fixed_assets WHERE id=?",(b["id"],)).fetchone()
@@ -2237,6 +2945,72 @@ class H(BaseHTTPRequestHandler):
                 jid=post_journal(c,next_no(c,"JE","journal_entries","journal_number"),b.get("date",datetime.date.today().isoformat()),"DEPRECIATION",a["id"],f"Penyusutan {a['asset_name']}",[(a["depr_expense_account_id"] or acct(c,"64001"),monthly,0,"Beban"),(a["accum_account_id"] or acct(c,"15002"),0,monthly,"Akumulasi")])
                 c.execute("UPDATE fixed_assets SET accum_depr=accum_depr+? WHERE id=?",(monthly,a["id"]))
                 c.commit(); return self._json({"ok":True,"amount":monthly})
+            if path=="/api/categories":
+                c.execute("INSERT INTO item_categories(category_code,category_name) VALUES(?,?)",
+                    (b.get("category_code") or next_no(c,"CAT","item_categories","category_code"), b["category_name"]))
+                c.commit(); return self._json({"ok":True})
+            if path=="/api/groups":
+                c.execute("INSERT INTO item_groups(group_code,group_name,category_id) VALUES(?,?,?)",
+                    (b.get("group_code") or next_no(c,"GRP","item_groups","group_code"), b["group_name"], b.get("category_id")))
+                c.commit(); return self._json({"ok":True})
+            if path=="/api/items/set-price":
+                # Penyesuaian harga jual massal (tanpa jurnal, hanya master)
+                n=0
+                for l in b.get("lines",[]):
+                    c.execute("UPDATE items SET sales_price=? WHERE id=?",(rp_int(l.get("sales_price",0)),l["item_id"]))
+                    n+=1
+                c.commit()
+                try: audit_log(me,"POST",path,200,after={"lines":n},detail=f"Set harga jual {n} barang",ip=client_ip(self))
+                except Exception: pass
+                return self._json({"ok":True,"lines":n})
+            if path=="/api/items/categorize":
+                c.execute("UPDATE items SET category_id=?,group_id=? WHERE id=?",
+                    (b.get("category_id"),b.get("group_id"),b["id"]))
+                c.commit(); return self._json({"ok":True})
+            if path=="/api/budgets":
+                c.execute("INSERT INTO account_budgets(account_id,year,month,amount) VALUES(?,?,?,?) ON CONFLICT(account_id,year,month) DO UPDATE SET amount=excluded.amount",
+                    (b["account_id"],b.get("year",datetime.date.today().strftime("%Y")),b.get("month","00"),rp_int(b.get("amount",0))))
+                c.commit(); return self._json({"ok":True})
+            if path=="/api/asset-types":
+                c.execute("INSERT INTO asset_types(type_code,type_name,useful_months,fiscal_group) VALUES(?,?,?,?)",
+                    (b.get("type_code") or next_no(c,"AST-T","asset_types","type_code"),b["type_name"],int(b.get("useful_months",48)),b.get("fiscal_group","")))
+                c.commit(); return self._json({"ok":True})
+            if path=="/api/import/items":
+                # CSV: item_code,item_name,item_type,base_unit,purchase_price,sales_price
+                rows = list(csv.DictReader(io.StringIO(b.get("csv",""))))
+                n=0; errs=[]
+                for i,r in enumerate(rows,2):
+                    try:
+                        name=(r.get("item_name") or "").strip()
+                        if not name: raise ValueError("nama kosong")
+                        code=(r.get("item_code") or "").strip() or next_no(c,"BRG","items","item_code")
+                        if c.execute("SELECT COUNT(*) n FROM items WHERE item_code=?",(code,)).fetchone()["n"]:
+                            raise ValueError(f"kode {code} duplikat")
+                        itype=(r.get("item_type") or "INVENTORY").strip().upper()
+                        if itype not in ("INVENTORY","SERVICE","NON_INVENTORY"): itype="INVENTORY"
+                        pp=rp_int(r.get("purchase_price",0)); sp_=rp_int(r.get("sales_price",0))
+                        c.execute("INSERT INTO items(item_code,item_name,item_type,base_unit,inventory_account_id,sales_account_id,cogs_account_id,purchase_price,sales_price,avg_cost,cost_method,is_active) VALUES(?,?,?,?,?,?,?,?,?,?,?,1)",
+                            (code,name,itype,(r.get("base_unit") or "PCS").strip(),acct(c,"13001") if itype=="INVENTORY" else None,acct(c,"41001"),acct(c,"51001") if itype=="INVENTORY" else None,pp,sp_,pp,"AVERAGE"))
+                        n+=1
+                    except Exception as e:
+                        errs.append(f"baris {i}: {e}")
+                c.commit()
+                try: audit_log(me,"POST",path,200,after={"imported":n,"errors":len(errs)},detail=f"Import barang {n} baris",ip=client_ip(self))
+                except Exception: pass
+                return self._json({"ok":True,"imported":n,"errors":errs[:20]})
+            if path=="/api/statements/import":
+                # CSV: transaction_date,description,amount (negatif=keluar)
+                rows = list(csv.DictReader(io.StringIO(b.get("csv",""))))
+                n=0
+                for r in rows:
+                    try: amt=float(r.get("amount",0))
+                    except Exception: continue
+                    if not amt: continue
+                    c.execute("INSERT INTO bank_statements(bank_account_id,transaction_date,description,amount,direction,status) VALUES(?,?,?,?,?,?)",
+                        (b["bank_account_id"],r.get("transaction_date") or datetime.date.today().isoformat(),
+                         r.get("description",""),abs(amt),"OUT" if amt<0 else "IN","UNMATCHED"))
+                    n+=1
+                c.commit(); return self._json({"ok":True,"imported":n})
             if path=="/api/webhooks":
                 c.execute("INSERT INTO webhooks(event,url) VALUES(?,?)",(b["event"],b["url"])); c.commit()
                 return self._json({"ok":True})
@@ -2245,11 +3019,185 @@ class H(BaseHTTPRequestHandler):
                 jid=post_journal(c,b.get("journal_number") or next_no(c,"JE","journal_entries","journal_number"),b.get("date",datetime.date.today().isoformat()),"OCR_DRAFT",None,b.get("description","OCR draft"),[(l["account_id"],float(l.get("debit",0)),float(l.get("credit",0)),"OCR") for l in b["lines"]])
                 c.execute("UPDATE journal_entries SET status='DRAFT' WHERE id=?",(jid,))
                 c.commit(); return self._json({"ok":True,"id":jid})
+            if path=="/api/rmas":
+                s = c.execute("SELECT * FROM sales_invoices WHERE id=?", (b["sales_invoice_id"],)).fetchone()
+                if not s or s["status"]=="VOID": raise ValueError("Invoice tidak valid")
+                date = b.get("date", datetime.date.today().isoformat())
+                rno = next_no(c,"RMA","rmas","rma_number")
+                cur = c.execute("INSERT INTO rmas(rma_number,sales_invoice_id,transaction_date,complaint) VALUES(?,?,?,?)",
+                    (rno,s["id"],date,b.get("complaint","")))
+                rid = cur.lastrowid
+                for l in b.get("lines",[]):
+                    it = c.execute("SELECT * FROM items WHERE id=?",(l["item_id"],)).fetchone()
+                    inv_l = c.execute("SELECT * FROM sales_invoice_lines WHERE sales_invoice_id=? AND item_id=?",(s["id"],it["id"])).fetchone()
+                    if not inv_l: raise ValueError(f"{it['item_code']} tidak ada di invoice")
+                    qty = float(l.get("qty",0))
+                    maxq = inv_l["quantity"] - returned_qty(c,"SALES",s["id"],it["id"])
+                    if qty<=0 or qty>maxq+0.005: raise ValueError(f"Qty RMA {it['item_code']} max {maxq}")
+                    c.execute("INSERT INTO rma_lines(rma_id,item_id,warehouse_id,quantity,unit_price,condition,description) VALUES(?,?,?,?,?,?,?)",
+                        (rid,it["id"],l.get("warehouse_id") or 0, qty, inv_l["unit_price"], l.get("condition","RUSAK"), l.get("description","")))
+                c.commit()
+                try: audit_log(me,"POST",path,200,ref_type="RMA",ref_id=rid,detail=f"RMA {rno}",ip=client_ip(self))
+                except Exception: pass
+                return self._json({"ok":True,"rma":rno,"id":rid})
+            if path=="/api/rmas/decide":
+                r = c.execute("SELECT * FROM rmas WHERE id=?",(b["id"],)).fetchone()
+                if not r or r["status"]!="OPEN": raise ValueError("RMA tidak valid")
+                st = "APPROVED" if b.get("approve") else "REJECTED"
+                c.execute("UPDATE rmas SET status=? WHERE id=?",(st,r["id"]))
+                c.commit(); return self._json({"ok":True,"status":st})
+            if path=="/api/rmas/action":
+                r = c.execute("SELECT * FROM rmas WHERE id=?",(b["rma_id"],)).fetchone()
+                if not r or r["status"] not in ("OPEN","APPROVED"): raise ValueError("RMA harus disetujui dulu")
+                action = b["action"]; date = b.get("date", datetime.date.today().isoformat())
+                if action not in ("REPAIR","REPLACE","REFUND"): raise ValueError("Action harus REPAIR/REPLACE/REFUND")
+                lines = q(c,"SELECT l.*,i.item_code,i.item_type FROM rma_lines l JOIN items i ON i.id=l.item_id WHERE rma_id=?",(r["id"],))
+                if not lines: raise ValueError("RMA tanpa baris")
+                if action=="REPAIR":
+                    c.execute("INSERT INTO rma_actions(rma_id,action,transaction_date,note) VALUES(?,?,?,?)",(r["id"],action,date,b.get("note","")))
+                    c.execute("UPDATE rmas SET status='CLOSED' WHERE id=?",(r["id"],))
+                    c.commit(); return self._json({"ok":True,"action":action})
+                if action=="REPLACE":
+                    # Auto buat Delivery Order pengganti (stok keluar + GIT)
+                    cust = c.execute("SELECT * FROM sales_invoices WHERE id=?",(r["sales_invoice_id"],)).fetchone()
+                    git_acc = acct(c,"13002"); dno = next_no(c,"DO","delivery_orders","delivery_number"); git_total=0; dl=[]
+                    did_row = c.execute("INSERT INTO delivery_orders(delivery_number,transaction_date,sales_order_id,customer_id) VALUES(?,?,NULL,?)",
+                        (dno,date,cust["customer_id"])).lastrowid
+                    for l in lines:
+                        it = c.execute("SELECT * FROM items WHERE id=?",(l["item_id"],)).fetchone()
+                        if it["item_type"]!="INVENTORY": raise ValueError(f"{it['item_code']} bukan barang persediaan")
+                        wh = l["warehouse_id"] or 0
+                        h, unit = ship_out(c,it,wh,date,"DELIVERY_ORDER",did_row,l["quantity"])
+                        git_total += h
+                        c.execute("INSERT INTO delivery_order_lines(delivery_order_id,sales_order_line_id,item_id,warehouse_id,quantity,unit_price,cogs_total,unit_code,unit_qty,unit_conv) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                            (did_row,None,it["id"],wh,l["quantity"],l["unit_price"],h,it["base_unit"],l["quantity"],1))
+                        dl.append((it,wh,h))
+                    jl=[(git_acc,rp_int(git_total),0,"DO RMA "+dno)]
+                    for it,wh,h in dl: jl.append((it["inventory_account_id"],0,rp_int(h),"DO RMA "+dno))
+                    jid = post_journal(c,"JE-"+dno,date,"DELIVERY_ORDER",did_row,"Penggantian RMA "+r["rma_number"],jl)
+                    c.execute("UPDATE delivery_orders SET journal_entry_id=? WHERE id=?",(jid,did_row))
+                    c.execute("INSERT INTO rma_actions(rma_id,action,transaction_date,delivery_order_id,journal_entry_id,note) VALUES(?,?,?,?,?,?)",(r["id"],action,date,did_row,jid,b.get("note","")))
+                    c.execute("UPDATE rmas SET status='REPLACED' WHERE id=?",(r["id"],))
+                    c.commit(); return self._json({"ok":True,"action":action,"delivery":dno})
+                if action=="REFUND":
+                    # Auto buat Sales Return (stok kembali + piutang berkurang)
+                    s = c.execute("SELECT * FROM sales_invoices WHERE id=?",(r["sales_invoice_id"],)).fetchone()
+                    ret_no = next_no(c,"RS","sales_returns","return_number"); subtotal=0; rlines=[]
+                    for l in lines:
+                        it = c.execute("SELECT * FROM items WHERE id=?",(l["item_id"],)).fetchone()
+                        qty = l["quantity"]; lt = rp_int(qty*l["unit_price"]); subtotal+=lt
+                        rlines.append((it,qty,l["unit_price"],lt,l["warehouse_id"] or 0))
+                    tax = rp_int(subtotal*float(s["tax_rate"] or 0)/100); total=subtotal+tax
+                    if outstanding_of(c,"AR",s["id"],s["total_amount"]) < total:
+                        raise ValueError("Refund melebihi sisa piutang")
+                    cur = c.execute("INSERT INTO sales_returns(return_number,sales_invoice_id,transaction_date,subtotal,tax_amount,total_amount) VALUES(?,?,?,?,?,?)",
+                        (ret_no,s["id"],date,subtotal,tax,total))
+                    rid = cur.lastrowid; sales_back={}; inv_back={}; cogs_back={}
+                    for it,qty,price,lt,wh in rlines:
+                        c.execute("INSERT INTO sales_return_lines(sales_return_id,item_id,warehouse_id,quantity,unit_price,line_total) VALUES(?,?,?,?,?,?)",
+                            (rid,it["id"],wh,qty,price,lt))
+                        sales_back[it["sales_account_id"]] = sales_back.get(it["sales_account_id"],0)+lt
+                        if it["item_type"]=="INVENTORY":
+                            cost = it["avg_cost"] or 0
+                            inv_back[it["inventory_account_id"]] = inv_back.get(it["inventory_account_id"],0)+rp_int(cost*qty)
+                            cogs_back[it["cogs_account_id"]] = cogs_back.get(it["cogs_account_id"],0)+rp_int(cost*qty)
+                            c.execute("INSERT INTO inventory_transactions(item_id,warehouse_id,transaction_date,reference_type,reference_id,qty_in,cogs_unit_price) VALUES(?,?,?,?,?,?,?)",
+                                (it["id"],wh,date,"SALES_RETURN",rid,qty,cost))
+                            if is_fifo(c,it["id"]): add_layer(c,it["id"],wh,date,"SALES_RETURN",rid,qty,cost)
+                    jl=[]
+                    for acc,amt in sales_back.items(): jl.append((acc,amt,0,"Retur "+ret_no))
+                    if tax: jl.append((acct(c,"22001"),tax,0,"PPN retur "+ret_no))
+                    cust = c.execute("SELECT * FROM customers WHERE id=?",(s["customer_id"],)).fetchone()
+                    jl.append((cust["receivable_account_id"],0,total,"Kurangi piutang "+ret_no))
+                    for acc,amt in inv_back.items(): jl.append((acc,amt,0,"Stok kembali "+ret_no))
+                    for acc,amt in cogs_back.items(): jl.append((acc,0,amt,"HPP kembali "+ret_no))
+                    jid = post_journal(c,"JE-"+ret_no,date,"SALES_RETURN",rid,"Refund RMA "+r["rma_number"],jl)
+                    c.execute("UPDATE sales_returns SET journal_entry_id=? WHERE id=?",(jid,rid))
+                    c.execute("INSERT INTO rma_actions(rma_id,action,transaction_date,sales_return_id,journal_entry_id,note) VALUES(?,?,?,?,?,?)",(r["id"],action,date,rid,jid,b.get("note","")))
+                    c.execute("UPDATE rmas SET status='REFUNDED' WHERE id=?",(r["id"],))
+                    refresh_status(c,"AR",s["id"])
+                    c.commit(); return self._json({"ok":True,"action":action,"return":ret_no})
+            if path=="/api/projects":
+                wip = acct(c,"13003")
+                code = b.get("project_code") or next_no(c,"PRJ","projects","project_code")
+                cur = c.execute("INSERT INTO projects(project_code,project_name,customer_id,start_date,end_date,budget,wip_account_id,revenue_account_id,cost_account_id) VALUES(?,?,?,?,?,?,?,?,?)",
+                    (code,b["project_name"],b.get("customer_id"),b["start_date"],b.get("end_date",""),rp_int(b.get("budget",0)),
+                     b.get("wip_account_id") or wip, b.get("revenue_account_id") or acct(c,"42001"), b.get("cost_account_id") or acct(c,"51001")))
+                c.commit(); return self._json({"ok":True,"project":code,"id":cur.lastrowid})
+            if path=="/api/projects/material":
+                p = c.execute("SELECT * FROM projects WHERE id=?",(b["project_id"],)).fetchone()
+                if not p or p["status"]=="CLOSED": raise ValueError("Proyek tidak valid")
+                it = c.execute("SELECT * FROM items WHERE id=?",(b["item_id"],)).fetchone()
+                qty = float(b["qty"]); wh = int(b.get("warehouse_id") or 0)
+                if not wh: raise ValueError("Gudang wajib")
+                if it["item_type"]!="INVENTORY": raise ValueError("Pilih barang persediaan")
+                date = b.get("date", datetime.date.today().isoformat())
+                h, unit = ship_out(c,it,wh,date,"PROJECT_MATERIAL",p["id"],qty)
+                jid = post_journal(c,next_no(c,"JE","journal_entries","journal_number"),date,"PROJECT_MATERIAL",p["id"],
+                    f"Material {p['project_name']}",[(p["wip_account_id"] or acct(c,"13003"),rp_int(h),0,"WIP"),(it["inventory_account_id"],0,rp_int(h),"Persediaan")])
+                c.execute("INSERT INTO project_costs(project_id,transaction_date,kind,item_id,warehouse_id,quantity,unit_cost,amount,ref_type,ref_id,journal_entry_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    (p["id"],date,"MATERIAL",it["id"],wh,qty,unit,rp_int(h),"PROJECT_MATERIAL",p["id"],jid))
+                c.commit(); return self._json({"ok":True,"cost":rp_int(h)})
+            if path=="/api/projects/cost":
+                p = c.execute("SELECT * FROM projects WHERE id=?",(b["project_id"],)).fetchone()
+                if not p or p["status"]=="CLOSED": raise ValueError("Proyek tidak valid")
+                amount = rp_int(b["amount"]); date = b.get("date", datetime.date.today().isoformat())
+                if amount <= 0: raise ValueError("Nominal > 0")
+                cash = int(b.get("cash_account_id") or 0)
+                kind = b.get("kind","LABOR")
+                if kind=="MATERIAL": raise ValueError("Material pakai endpoint /api/projects/material")
+                jid = post_journal(c,next_no(c,"JE","journal_entries","journal_number"),date,"PROJECT_COST",p["id"],
+                    f"{kind} {p['project_name']}",[(p["wip_account_id"] or acct(c,"13003"),amount,0,"WIP"),
+                    (cash if cash else (acct(c,"11001")),0,amount,"Kas")])
+                c.execute("INSERT INTO project_costs(project_id,transaction_date,kind,amount,ref_type,ref_id,journal_entry_id) VALUES(?,?,?,?,?,?,?)",
+                    (p["id"],date,kind,amount,"PROJECT_COST",p["id"],jid))
+                c.commit(); return self._json({"ok":True,"cost":amount})
+            if path=="/api/projects/bill":
+                p = c.execute("SELECT * FROM projects WHERE id=?",(b["project_id"],)).fetchone()
+                if not p or p["status"]=="CLOSED": raise ValueError("Proyek tidak valid")
+                if not p["customer_id"]: raise ValueError("Proyek harus punya customer")
+                date = b.get("date", datetime.date.today().isoformat())
+                amount = rp_int(b["amount"])
+                if amount <= 0: raise ValueError("Nominal > 0")
+                # Buat Sales Invoice jasa (item jasa otomatis bila tidak ada)
+                jasa = c.execute("SELECT id FROM items WHERE item_type='SERVICE' LIMIT 1").fetchone()
+                if not jasa:
+                    curj = c.execute("INSERT INTO items(item_code,item_name,item_type,base_unit,sales_account_id,sales_price,is_active,cost_method) VALUES(?,?,?,?,?,?,?,?)",
+                        ("JASA-PROYEK","Jasa Proyek","SERVICE","JAM",p["revenue_account_id"] or acct(c,"42001"),amount,1,"AVERAGE"))
+                    jasa = {"id":curj.lastrowid}
+                inv_no = next_no(c,"INV","sales_invoices","invoice_number")
+                cust = c.execute("SELECT * FROM customers WHERE id=?",(p["customer_id"],)).fetchone()
+                jid = post_journal(c,"JE-"+inv_no,date,"SALES_INVOICE",None,
+                    f"Tagihan proyek {p['project_name']}",[(cust["receivable_account_id"],amount,0,"Piutang"),(p["revenue_account_id"] or acct(c,"42001"),0,amount,"Pendapatan")])
+                cur = c.execute("INSERT INTO sales_invoices(invoice_number,transaction_date,due_date,customer_id,subtotal,tax_amount,total_amount,journal_entry_id) VALUES(?,?,?,?,0,0,?,?)",
+                    (inv_no,date,date,p["customer_id"],amount,jid))
+                sid = cur.lastrowid
+                c.execute("UPDATE journal_entries SET reference_id=? WHERE id=?",(sid,jid))
+                c.execute("INSERT INTO project_bills(project_id,sales_invoice_id,amount,transaction_date) VALUES(?,?,?,?)",(p["id"],sid,amount,date))
+                c.commit(); return self._json({"ok":True,"invoice":inv_no,"id":sid})
+            if path=="/api/projects/ending":
+                p = c.execute("SELECT * FROM projects WHERE id=?",(b["project_id"],)).fetchone()
+                if not p or p["status"]=="CLOSED": raise ValueError("Proyek tidak valid")
+                date = b.get("date", datetime.date.today().isoformat())
+                total_cost = c.execute("SELECT COALESCE(SUM(amount),0) s FROM project_costs WHERE project_id=?",(p["id"],)).fetchone()["s"] or 0
+                total_bill = c.execute("SELECT COALESCE(SUM(amount),0) s FROM project_bills WHERE project_id=?",(p["id"],)).fetchone()["s"] or 0
+                wip = p["wip_account_id"] or acct(c,"13003")
+                cost_acc = p["cost_account_id"] or acct(c,"51001")
+                # Pendapatan sudah diakui saat billing; saat tutup cukup pindahkan WIP -> COGS.
+                # Laba/rugi muncul otomatis di Laporan Laba-Rugi (Pendapatan - COGS).
+                jl=[(cost_acc,rp_int(total_cost),0,"Biaya "+p["project_name"]),(wip,0,rp_int(total_cost),"WIP keluar")]
+                jid = post_journal(c,next_no(c,"JE","journal_entries","journal_number"),date,"PROJECT_ENDING",p["id"],
+                    f"Tutup proyek {p['project_name']}",jl)
+                c.execute("UPDATE projects SET status='CLOSED',end_date=?,journal_entry_id=? WHERE id=?",(date,jid,p["id"]))
+                c.commit(); return self._json({"ok":True,"cost":rp_int(total_cost),"bill":rp_int(total_bill),"profit":rp_int(total_bill)-rp_int(total_cost)})
             return self._json({"error":"not found"},404)
         except PermissionError as e:
             c.rollback(); return self._json({"error":str(e)},403)
         except Exception as e:
-            c.rollback(); return self._json({"error":str(e)},400)
+            c.rollback()
+            msg = str(e)
+            code = 409 if "sudah dipakai" in msg else 400
+            return self._json({"error":msg},code)
         finally: c.close()
 
     def serve_static(self, fn):
