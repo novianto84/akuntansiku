@@ -112,7 +112,6 @@ async function boot(){
   : R==="FINANCE" ? ALL_MENUS.filter(m=>m!=="Master")
   : ALL_MENUS;
  if(!MENUS.includes(cur))cur="Dashboard";
- $("#nav").innerHTML+=`<div class="mut">${esc(ME.full_name)} (${esc(ME.role)})</div><button onclick="logout()">Keluar</button><button onclick="chPass()">Ganti password</button>`;
  loadM().then(render).catch(e=>{$("#app").innerHTML=`<div class="card">❌ ${esc(e.message)}</div>`;});
 }
 function loginScreen(){
@@ -141,12 +140,13 @@ function drawNav(){
  let menuHtml=MENUS.map(m=>{
   if(m==="Master"&&cur==="Master"){
    let subHtml=Object.keys(MASTER_SUBS).map(k=>`<button class="sub-btn${curSub===k?' active':''}" onclick="goMaster('${k}')"><span class="nav-icon">${MASTER_SUB_ICONS[k]||"📄"}</span>${k}</button>`).join("");
-   return `<button class="${m===cur?'active':''}" onclick="go('${m}')"><span class="nav-icon">${MENU_ICONS[m]||"📄"}</span>${m}</button><div class="sub-nav">${subHtml}</div>`;
+   return `<button class="nav-item${m===cur?' active':''}" onclick="go('${m}')"><span class="nav-icon">${MENU_ICONS[m]||"📄"}</span><span class="nav-label">${m}</span></button><div class="sub-nav">${subHtml}</div>`;
   }
-  return `<button class="${m===cur?'active':''}" onclick="go('${m}')"><span class="nav-icon">${MENU_ICONS[m]||"📄"}</span>${m}</button>`;
+  return `<button class="nav-item${m===cur?' active':''}" onclick="go('${m}')"><span class="nav-icon">${MENU_ICONS[m]||"📄"}</span><span class="nav-label">${m}</span></button>`;
  }).join("");
- const userSection=ME?`<div class="user-info"><div class="user-avatar">${(ME.full_name||"U").charAt(0).toUpperCase()}</div><div class="user-details"><div class="user-name">${esc(ME.full_name)}</div><div class="user-role">${esc(ME.role)}</div></div></div><button onclick="chPass()" title="Ganti Password"><span class="nav-icon">🔑</span>Ganti Password</button><button onclick="logout()" title="Keluar"><span class="nav-icon">🚪</span>Keluar</button>`:"";
- nav.innerHTML=`<div class="nav-section">Menu</div>${menuHtml}${userSection}`;
+ const initials=(ME.full_name||"?").trim().split(/\s+/).slice(0,2).map(w=>w.charAt(0).toUpperCase()).join("");
+ const userSection=ME?`<div class="user-info"><div class="user-avatar">${esc(initials)}</div><div class="user-details"><div class="user-name">${esc(ME.full_name)}</div><div class="user-role">${esc(ME.role)}</div></div></div><div class="user-actions"><button onclick="chPass()" title="Ganti Password"><span class="nav-icon">🔑</span><span class="nav-label">Ganti Password</span></button><button onclick="logout()" title="Keluar"><span class="nav-icon">🚪</span><span class="nav-label">Keluar</span></button></div>`:"";
+ nav.innerHTML=`<div class="nav-section">Menu</div><div class="nav-list">${menuHtml}</div>${userSection}`;
 }
 function go(m){cur=m;curSub="";curDetail=null;curDetailId=null;searchQ="";$("#title").textContent=m;drawNav();
  const rev=Object.keys(ROUTES).find(k=>ROUTES[k]===m);if(rev&&location.hash!==rev)history.replaceState(null,"",rev);render();}
@@ -524,11 +524,11 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
   if(curDetail==="journal"){A.innerHTML=await renderJournalDetail(curDetailId);return;}
   if(cur==="Dashboard"){
    const d=await api("/api/dashboard");const f=await api("/api/forecast");
-   A.innerHTML=`<div class="grid">
-    <div class="kpi kpi-info"><div class="kpi-icon">📈</div><div class="kpi-label">Omzet</div><b>${fmt(d.omzet)}</b></div>
-    <div class="kpi kpi-success"><div class="kpi-icon">💰</div><div class="kpi-label">Kas & Bank</div><b>${fmt(d.kas_bank)}</b></div>
-    <div class="kpi kpi-warning"><div class="kpi-icon">📋</div><div class="kpi-label">Piutang Outstanding</div><b>${fmt(d.piutang_outstanding)}</b></div>
-    <div class="kpi"><div class="kpi-icon">🛒</div><div class="kpi-label">Pembelian</div><b>${fmt(d.pembelian)}</b></div></div>
+   A.innerHTML=`<div class="kpi-row">
+    <div class="kpi kpi-info"><div class="kpi-icon">📈</div><div class="kpi-meta"><div class="kpi-label">Omzet</div><b>${fmt(d.omzet)}</b></div></div>
+    <div class="kpi kpi-success"><div class="kpi-icon">💰</div><div class="kpi-meta"><div class="kpi-label">Kas & Bank</div><b>${fmt(d.kas_bank)}</b></div></div>
+    <div class="kpi kpi-warning"><div class="kpi-icon">📋</div><div class="kpi-meta"><div class="kpi-label">Piutang</div><b>${fmt(d.piutang_outstanding)}</b></div></div>
+    <div class="kpi"><div class="kpi-icon">🛒</div><div class="kpi-meta"><div class="kpi-label">Pembelian</div><b>${fmt(d.pembelian)}</b></div></div></div>
    <div class="card"><h3><span class="card-icon">💡</span>Cash-Flow Forecast (Next-Gen)</h3>
    <div style="overflow-x:auto"><table><thead><tr><th>Bulan</th><th>Proyeksi Kas Masuk</th><th>Status</th></tr></thead><tbody>${f.map(x=>`<tr><td>${x.bulan}</td><td><b>${fmt(x.proyeksi_kas_masuk)}</b></td><td><span class="bdg b-PENDING">Proyeksi</span></td></tr>`).join("")}</tbody></table></div>
    <p class="mut" style="margin-top:12px">${d.forecast}</p></div>
@@ -598,16 +598,19 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
     let h=`<div class="row">${[["quotation","Penawaran"],["order","Pesanan"],["delivery","Surat Jalan"],["invoice","Faktur"],["return","Retur"],["rma","RMA"],["cn","CN (Credit Note)"],["dn","DN (Debit Note)"]].map(t=>`<button class="go"${sub===t[0]?"":' style="opacity:.55"'} onclick="_psub='${t[0]}';render()">${t[1]}</button>`).join("")}</div>`;
    h+=`<div class="row" style="margin:16px 0"><button class="go" onclick="batchPrintInvoices()">🖨️ Batch Print Faktur</button></div>`;
    if(sub==="quotation"){
-   h+=`<div class="card"><h3>Penawaran Penjualan (non-posting)</h3>
-   <div class="grid grid-3">
-   <div class="field required"><label>Customer</label><select id="q_cust">${CUST.map(c=>`<option value="${c.id}">${c.customer_name}</option>`).join("")}</select></div>
+    h+=`<div class="card"><h3>Penawaran Penjualan (non-posting)</h3>
+    <div class="form-grid">
+    <div class="field required fg-2"><label>Customer</label><select id="q_cust">${CUST.map(c=>`<option value="${c.id}">${c.customer_name}</option>`).join("")}</select></div>
     <div class="field required"><label>Tanggal</label><input type="date" id="q_date" value="${today()}"></div>
-    <div class="field"><label>PPN%</label><input id="q_tax" value="11" style="width:60px"></div>
+    <div class="field"><label>PPN%</label><input id="q_tax" value="11"></div>
     <div class="field"><label>Berlaku s/d</label><input type="date" id="q_valid" value=""></div>
     </div>
-   <div class="row">Barang <select id="q_item" onchange="unitCh('q')">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
-   Satuan <select id="q_unit"></select> Qty <input id="q_qty" value="1" style="width:60px"> Harga <input id="q_price" value="100000" style="width:120px">
-   Deskripsi <input id="q_desc" value="" style="width:160px">
+   <div class="form-grid">
+   <div class="field fg-2"><label>Barang</label><select id="q_item" onchange="unitCh('q')">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select></div>
+   <div class="field"><label>Satuan</label><select id="q_unit"></select></div>
+   <div class="field"><label>Qty</label><input id="q_qty" value="1"></div>
+   <div class="field"><label>Harga</label><input id="q_price" value="100000"></div>
+   <div class="field fg-2"><label>Deskripsi</label><input id="q_desc" value=""></div>
    <button class="go" onclick="addQ()">+ baris</button></div><div id="qlines"></div>
    <button class="go" onclick="saveQ()">Simpan Penawaran</button></div>
     <div class="card"><h3>Riwayat Penawaran</h3><table><tr><th>No</th><th>Tgl</th><th>Berlaku s/d</th><th>Customer</th><th>Total</th><th>Status</th><th>Diproses</th><th></th></tr>
@@ -615,14 +618,14 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
   }
   if(sub==="order"){
    h+=`<div class="card"><h3>Pesanan Penjualan / SO (non-posting, mengikat stok)</h3>
-   <div class="grid grid-3">
-   <div class="field required"><label>Customer</label><select id="o_cust">${CUST.map(c=>`<option value="${c.id}">${c.customer_name}</option>`).join("")}</select></div>
-    <div class="field required"><label>Tanggal</label><input type="date" id="o_date" value="${today()}"></div>
-    <div class="field"><label>PPN%</label><input id="o_tax" value="11" style="width:60px"></div>
-    <div class="field"><label>Tgl kirim</label><input type="date" id="o_ship" value=""></div>
-    <div class="field"><label>PO Customer</label><input id="o_po" value="" placeholder="No PO pelanggan"></div>
-    <div class="field"><label>Dari penawaran</label><select id="o_sq"><option value="">- manual -</option>${sq.filter(x=>x.status==="OPEN").map(x=>`<option value="${x.id}">${x.quotation_number}</option>`).join("")}</select>
-    <button class="go" onclick="copySQ()">Salin</button></div>
+   <div class="form-grid">
+   <div class="field required fg-2"><label>Customer</label><select id="o_cust">${CUST.map(c=>`<option value="${c.id}">${c.customer_name}</option>`).join("")}</select></div>
+   <div class="field required"><label>Tanggal</label><input type="date" id="o_date" value="${today()}"></div>
+   <div class="field"><label>PPN%</label><input id="o_tax" value="11"></div>
+   <div class="field"><label>Tgl kirim</label><input type="date" id="o_ship" value=""></div>
+   <div class="field"><label>PO Customer</label><input id="o_po" value="" placeholder="No PO pelanggan"></div>
+   <div class="field"><label>Dari penawaran</label><select id="o_sq"><option value="">- manual -</option>${sq.filter(x=>x.status==="OPEN").map(x=>`<option value="${x.id}">${x.quotation_number}</option>`).join("")}</select></div>
+   <button class="go" onclick="copySQ()">Salin</button>
    </div>
    <div id="oo_wrap"></div>
    <button class="go" onclick="saveO()">Simpan SO</button></div>
@@ -634,67 +637,70 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
   if(sub==="delivery"){
    const openSO=so.filter(x=>x.status!=="CLOSED");
    h+=`<div class="card"><h3>Surat Jalan / Delivery (stok keluar → Brg Dalam Perjalanan)</h3>
-   <div class="grid grid-2">
-   <div class="field required"><label>Customer</label><select id="d_cust">${CUST.map(c=>`<option value="${c.id}">${c.customer_name}</option>`).join("")}</select></div>
-    <div class="field required"><label>Tanggal</label><input type="date" id="d_date" value="${today()}"></div>
-    <div class="field"><label>Dari SO</label><select id="d_so" onchange="doLines()"><option value="">- langsung -</option>${openSO.map(x=>`<option value="${x.id}">${x.order_number} (${x.customer_name})</option>`).join("")}</select></div>
-    <div class="field"><label>Kirim ke</label><input id="d_ship" placeholder="Alamat kirim"></div>
-    <div class="field"><label>Via</label><input id="d_via" placeholder="Ekspedisi"></div>
-    </div>
+   <div class="form-grid">
+   <div class="field required fg-2"><label>Customer</label><select id="d_cust">${CUST.map(c=>`<option value="${c.id}">${c.customer_name}</option>`).join("")}</select></div>
+   <div class="field required"><label>Tanggal</label><input type="date" id="d_date" value="${today()}"></div>
+   <div class="field"><label>Dari SO</label><select id="d_so" onchange="doLines()"><option value="">- langsung -</option>${openSO.map(x=>`<option value="${x.id}">${x.order_number} (${x.customer_name})</option>`).join("")}</select></div>
+   <div class="field"><label>Kirim ke</label><input id="d_ship" placeholder="Alamat kirim"></div>
+   <div class="field"><label>Via</label><input id="d_via" placeholder="Ekspedisi"></div>
+   </div>
    <div id="dref"></div>
-   <div class="row">Barang <select id="d_item" onchange="unitCh('d')">${ITEMS.filter(i=>i.item_type==="INVENTORY").map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
-   Gudang <select id="d_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select>
-   Satuan <select id="d_unit"></select> Qty <input id="d_qty" value="1" style="width:60px"> Deskripsi <input id="d_desc" value="" style="width:140px">
-   <button class="go" onclick="addD()">+ baris langsung</button></div><div id="dlines"></div>
+   <div class="form-grid">
+   <div class="field fg-2"><label>Barang</label><select id="d_item" onchange="unitCh('d')">${ITEMS.filter(i=>i.item_type==="INVENTORY").map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select></div>
+   <div class="field"><label>Gudang</label><select id="d_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></div>
+   <div class="field"><label>Satuan</label><select id="d_unit"></select></div>
+   <div class="field"><label>Qty</label><input id="d_qty" value="1"></div>
+   <div class="field fg-2"><label>Deskripsi</label><input id="d_desc" value=""></div>
+   <button class="go" onclick="addD()">+ baris</button></div><div id="dlines"></div>
    <button class="go" onclick="saveD()">Simpan Surat Jalan</button></div>
     <div class="card"><h3>Riwayat Surat Jalan</h3>${dn.map(x=>`<details><summary><b>${x.delivery_number}</b> ${x.transaction_date} ${x.customer_name} ${st(x.status)}</summary><table><tr><th>Barang</th><th>Deskripsi</th><th>Qty</th><th>Tertagih</th></tr>${x.lines.map(l=>`<tr><td>${l.item_name}</td><td>${l.description||""}</td><td>${l.quantity}</td><td>${l.invoiced_qty}</td></tr>`).join("")}</table><div class="proceed">${(x.proceeded||[]).map(p=>`<span class="tag">INV ${p.invoice_number}</span>`).join("")}</div>${x.status==="POSTED"?`<button class="go" onclick="mkInv(${x.id})">Buat Invoice</button> <button class="go danger" onclick="voidD(${x.id})">Void</button>`:""}</details>`).join("")}</div>`;
   }
-  if(sub==="invoice"){
-   h+=`<div class="card"><h3>Buat Faktur Penjualan (auto-jurnal + auto-HPP FIFO/Average)</h3>
-   <div class="grid grid-2">
-   <div class="field required"><label>Customer</label><div class="row"><select id="s_cust">${CUST.map(c=>`<option value="${c.id}">${esc(c.customer_name)}</option>`).join("")}</select>
-   <button class="go" onclick="quickCust()">+ Baru</button></div></div>
-   <div class="field"><label>Gudang</label><select id="s_wh">${WH.map(w=>`<option value="${w.id}">${esc(w.warehouse_name)}</option>`).join("")}</select></div>
-   <div class="field required"><label>Tanggal</label><input type="date" id="s_date" value="${today()}"></div>
-   <div class="field"><label>PPN</label>${taxSel("s_tax",11)}</div>
-   </div>
-  <div class="row">Salesman <select id="s_sp"><option value="">- tanpa salesman -</option>${SP.map(s=>`<option value="${s.id}">${s.sp_name} (${s.commission_pct}%)</option>`).join("")}</select>
-  <span class="mut">komisi otomatis: Dr Beban Komisi / Cr Utang Komisi</span></div>
-  <div class="row">Dari DO <select id="s_do" onchange="siDO()"><option value="">-</option>${dn.filter(x=>x.status==="POSTED").map(x=>`<option value="${x.id}">${x.delivery_number}</option>`).join("")}</select>
-  Dari SO <select id="s_so" onchange="siSO()"><option value="">-</option>${so.filter(x=>x.status!=="CLOSED").map(x=>`<option value="${x.id}">${x.order_number}</option>`).join("")}</select>
-  <span class="mut">Pilih untuk tagih dari surat jalan / pesanan</span></div>
-  <div id="sref"></div>
-  <div id="sg_wrap"></div><div id="slines" class="mut"></div>
-  <button class="go" onclick="saveSale()">Simpan & Posting Jurnal</button>
-  <details><summary class="mut">+ Tukar tambah (barang bekas masuk stok, piutang berkurang)</summary>
-  <div class="row">Barang diterima <select id="ti_item">${ITEMS.filter(i=>i.item_type==="INVENTORY").map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
-  Qty <input id="ti_qty" value="1" style="width:60px"> Nilai kesepakatan <input id="ti_val" value="0" style="width:130px">
-  Ket <input id="ti_note" value=""></div></details></div>
-  <div class="card"><h3>Riwayat Invoice</h3><table><tr><th>No</th><th>Tgl</th><th>Customer</th><th>Sales</th><th>Total</th><th>Komisi</th><th>Tukar+</th><th>Sisa</th><th>Status</th><th></th></tr>
-   ${inv.map(x=>`<tr class="clickable-row" onclick="goDetail('sales-invoice',${x.id})"><td><b>${x.invoice_number}</b></td><td>${x.transaction_date}</td><td>${x.customer_name}</td><td>${x.salesperson||"-"}</td><td>${fmt(x.total_amount)}</td><td>${fmt(x.commission_amount||0)}</td><td>${fmt(x.tradein_total||0)}</td><td>${fmt(x.outstanding)}</td><td>${st(x.status)}</td><td>${x.status!=="VOID"?`<button class="go danger" onclick="voidSale(${x.id})">Void</button>`:""} <button class="go" onclick="printInv(${x.id})">Cetak</button></td></tr>`).join("")}</table></div>`;
-  }
-  if(sub==="return"){
-   h+=`<div class="card"><h3>Retur Penjualan (parsial, stok kembali + jurnal)</h3>
-   <div class="grid grid-3">
-   <div class="field required"><label>Invoice</label><select id="rs_inv">${inv.filter(x=>x.status!=="VOID").map(x=>`<option value="${x.id}">${x.invoice_number} (sisa ${fmt(x.outstanding)})</option>`).join("")}</select></div>
-   <div class="field required"><label>Barang</label><select id="rs_item">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select></div>
-   <div class="field"><label>Gudang</label><select id="rs_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></div>
-   <div class="field"><label>Qty</label><input id="rs_qty" value="1" style="width:60px"></div>
-   <div class="field required"><label>Tanggal</label><input type="date" id="rs_date" value="${today()}"></div>
-   </div>
-    <div class="row" style="margin-top:12px"><button class="go" onclick="saveRS()">Catat Retur</button></div>
-    <table><tr><th>No Retur</th><th>Invoice</th><th>Tgl</th><th>Total</th></tr>${rets.map(r=>`<tr><td>${r.return_number}</td><td>${r.invoice_number}</td><td>${r.transaction_date}</td><td>${fmt(r.total_amount)}</td></tr>`).join("")}</table></div>`;
-   }
-   if(sub==="rma"){
-    h+=`<div class="card"><h3>RMA — Return Merchandise Authorization (Accurate Deluxe)</h3>
-    <div class="grid grid-3">
-    <div class="field required"><label>Invoice</label><select id="rma_inv" onchange="rmaLines()">${inv.filter(x=>x.status!=="VOID").map(x=>`<option value="${x.id}">${x.invoice_number} (${x.customer_name})</option>`).join("")}</select></div>
-    <div class="field required"><label>Tanggal</label><input type="date" id="rma_date" value="${today()}"></div>
-    <div class="field"><label>Keluhan</label><input id="rma_complaint" placeholder="Komplain pelanggan"></div>
+   if(sub==="invoice"){
+    h+=`<div class="card"><h3>Buat Faktur Penjualan (auto-jurnal + auto-HPP FIFO/Average)</h3>
+    <div class="form-grid">
+    <div class="field required fg-2"><label>Customer</label><div class="row" style="gap:8px;flex-wrap:nowrap"><select id="s_cust">${CUST.map(c=>`<option value="${c.id}">${esc(c.customer_name)}</option>`).join("")}</select><button class="go" onclick="quickCust()" style="padding:12px 14px">+</button></div></div>
+    <div class="field"><label>Gudang</label><select id="s_wh">${WH.map(w=>`<option value="${w.id}">${esc(w.warehouse_name)}</option>`).join("")}</select></div>
+    <div class="field required"><label>Tanggal</label><input type="date" id="s_date" value="${today()}"></div>
+    <div class="field"><label>PPN</label>${taxSel("s_tax",11)}</div>
+    <div class="field"><label>Salesman</label><select id="s_sp"><option value="">- tanpa -</option>${SP.map(s=>`<option value="${s.id}">${s.sp_name} (${s.commission_pct}%)</option>`).join("")}</select></div>
+    <div class="field"><label>Dari DO</label><select id="s_do" onchange="siDO()"><option value="">-</option>${dn.filter(x=>x.status==="POSTED").map(x=>`<option value="${x.id}">${x.delivery_number}</option>`).join("")}</select></div>
+    <div class="field"><label>Dari SO</label><select id="s_so" onchange="siSO()"><option value="">-</option>${so.filter(x=>x.status!=="CLOSED").map(x=>`<option value="${x.id}">${x.order_number}</option>`).join("")}</select></div>
     </div>
-    <div id="rma_ref"></div>
-    <div id="rma_lines_preview" class="mut"></div>
-    <button class="go" onclick="saveRMA()">Buat RMA</button></div>
+   <div class="mut" style="margin-bottom:8px">Komisi otomatis: Dr Beban Komisi / Cr Utang Komisi. Pilih DO/SO untuk menagih dari surat jalan / pesanan.</div>
+   <div id="sref"></div>
+   <div id="sg_wrap"></div><div id="slines" class="mut"></div>
+   <button class="go" onclick="saveSale()">Simpan & Posting Jurnal</button>
+   <details><summary class="mut">+ Tukar tambah (barang bekas masuk stok, piutang berkurang)</summary>
+   <div class="form-grid">
+   <div class="field"><label>Barang diterima</label><select id="ti_item">${ITEMS.filter(i=>i.item_type==="INVENTORY").map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select></div>
+   <div class="field"><label>Qty</label><input id="ti_qty" value="1"></div>
+   <div class="field"><label>Nilai kesepakatan</label><input id="ti_val" value="0"></div>
+   <div class="field fg-2"><label>Keterangan</label><input id="ti_note" value=""></div></div></details></div>
+   <div class="card"><h3>Riwayat Invoice</h3><table><tr><th>No</th><th>Tgl</th><th>Customer</th><th>Sales</th><th>Total</th><th>Komisi</th><th>Tukar+</th><th>Sisa</th><th>Status</th><th></th></tr>
+    ${inv.map(x=>`<tr class="clickable-row" onclick="goDetail('sales-invoice',${x.id})"><td><b>${x.invoice_number}</b></td><td>${x.transaction_date}</td><td>${x.customer_name}</td><td>${x.salesperson||"-"}</td><td>${fmt(x.total_amount)}</td><td>${fmt(x.commission_amount||0)}</td><td>${fmt(x.tradein_total||0)}</td><td>${fmt(x.outstanding)}</td><td>${st(x.status)}</td><td>${x.status!=="VOID"?`<button class="go danger" onclick="voidSale(${x.id})">Void</button>`:""} <button class="go" onclick="printInv(${x.id})">Cetak</button></td></tr>`).join("")}</table></div>`;
+   }
+   if(sub==="return"){
+    h+=`<div class="card"><h3>Retur Penjualan (parsial, stok kembali + jurnal)</h3>
+    <div class="form-grid">
+    <div class="field required fg-2"><label>Invoice</label><select id="rs_inv">${inv.filter(x=>x.status!=="VOID").map(x=>`<option value="${x.id}">${x.invoice_number} (sisa ${fmt(x.outstanding)})</option>`).join("")}</select></div>
+    <div class="field required"><label>Barang</label><select id="rs_item">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select></div>
+    <div class="field"><label>Gudang</label><select id="rs_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></div>
+    <div class="field"><label>Qty</label><input id="rs_qty" value="1"></div>
+    <div class="field required"><label>Tanggal</label><input type="date" id="rs_date" value="${today()}"></div>
+    <button class="go" onclick="saveRS()">Catat Retur</button>
+    </div>
+    <table><tr><th>No Retur</th><th>Invoice</th><th>Tgl</th><th>Total</th></tr>${rets.map(r=>`<tr><td>${r.return_number}</td><td>${r.invoice_number}</td><td>${r.transaction_date}</td><td>${fmt(r.total_amount)}</td></tr>`).join("")}</table></div>`;
+    }
+    if(sub==="rma"){
+     h+=`<div class="card"><h3>RMA — Return Merchandise Authorization (Accurate Deluxe)</h3>
+     <div class="form-grid">
+     <div class="field required fg-2"><label>Invoice</label><select id="rma_inv" onchange="rmaLines()">${inv.filter(x=>x.status!=="VOID").map(x=>`<option value="${x.id}">${x.invoice_number} (${x.customer_name})</option>`).join("")}</select></div>
+     <div class="field required"><label>Tanggal</label><input type="date" id="rma_date" value="${today()}"></div>
+     <div class="field fg-2"><label>Keluhan</label><input id="rma_complaint" placeholder="Komplain pelanggan"></div>
+     </div>
+     <div id="rma_ref"></div>
+     <div id="rma_lines_preview" class="mut"></div>
+     <button class="go" onclick="saveRMA()">Buat RMA</button></div>
     <div class="card"><h3>Daftar RMA</h3><table><tr><th>No</th><th>Invoice</th><th>Customer</th><th>Tgl</th><th>Status</th><th>Aksi</th></tr>
     ${rmas.map(x=>`<tr><td>${x.rma_number}</td><td>${x.invoice_number}</td><td>${x.customer_name}</td><td>${x.transaction_date}</td><td>${st(x.status)}</td><td>${x.status==="OPEN"?`<button class="go ok" onclick="rmaDecide(${x.id},1)">Approve</button> <button class="go danger" onclick="rmaDecide(${x.id},0)">Tolak</button>`:""}${x.status==="APPROVED"?`<button class="go" onclick="rmaRepair(${x.id})">Repair</button> <button class="go" onclick="rmaReplace(${x.id})">Ganti</button> <button class="go danger" onclick="rmaRefund(${x.id})">Refund</button>`:""}</td></tr>`).join("")}</table></div>`;
    }
@@ -758,13 +764,16 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
   let h=`<div class="row">${[["req","Permintaan"],["order","Pesanan (PO)"],["receive","Penerimaan"],["invoice","Faktur"],["return","Retur"]].map(t=>`<button class="go"${sub===t[0]?"":' style="opacity:.55"'} onclick="_bsub='${t[0]}';render()">${t[1]}</button>`).join("")}</div>`;
   if(sub==="req"){
    h+=`<div class="card"><h3>Permintaan Pembelian / PR (non-posting)</h3>
-   <div class="grid grid-3">
+   <div class="form-grid">
    <div class="field"><label>Vendor (opsional)</label><select id="r_vend"><option value="">- internal -</option>${VEND.map(c=>`<option value="${c.id}">${c.vendor_name}</option>`).join("")}</select></div>
    <div class="field required"><label>Tanggal</label><input type="date" id="r_date" value="${today()}"></div>
    <div class="field"><label>Peminta</label><input id="r_req" value=""></div>
    </div>
-   <div class="row">Barang <select id="r_item">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
-   Qty <input id="r_qty" value="10" style="width:60px"> Estimasi harga <input id="r_price" value="50000" style="width:120px"> Deskripsi <input id="r_desc" value="" style="width:140px">
+   <div class="form-grid">
+   <div class="field fg-2"><label>Barang</label><select id="r_item">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select></div>
+   <div class="field"><label>Qty</label><input id="r_qty" value="10"></div>
+   <div class="field"><label>Estimasi harga</label><input id="r_price" value="50000"></div>
+   <div class="field fg-2"><label>Deskripsi</label><input id="r_desc" value=""></div>
    <button class="go" onclick="addR()">+ baris</button></div><div id="rlines"></div>
    <button class="go" onclick="saveR()">Simpan PR</button></div>
     <div class="card"><h3>Riwayat PR</h3><table><tr><th>No</th><th>Tgl</th><th>Vendor</th><th>Status</th><th></th></tr>
@@ -772,17 +781,17 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
   }
   if(sub==="order"){
    h+=`<div class="card"><h3>Pesanan Pembelian / PO (non-posting)</h3>
-   <div class="grid grid-3">
-   <div class="field required"><label>Vendor</label><select id="o_vend">${VEND.map(c=>`<option value="${c.id}">${c.vendor_name}</option>`).join("")}</select></div>
-    <div class="field required"><label>Tanggal</label><input type="date" id="o_date" value="${today()}"></div>
-    <div class="field"><label>PPN%</label><input id="o_tax" value="11" style="width:60px"></div>
-    <div class="field"><label>FOB</label><select id="o_fob"><option value="">-</option><option>Shipping Point</option><option>Destination</option></select></div>
-    <div class="field"><label>Termin</label><input id="o_terms" value="NET 30" style="width:90px"></div>
-    <div class="field"><label>Via</label><input id="o_shipp" value="" placeholder="Ekspedisi"></div>
-    <div class="field"><label>Kirim ke</label><input id="o_shipt" value="" placeholder="Alamat"></div>
-    <div class="field"><label>Perkiraan tiba</label><input type="date" id="o_exp" value=""></div>
-    <div class="field"><label>Dari PR</label><select id="o_pr"><option value="">- manual -</option>${pr.filter(x=>x.status==="OPEN").map(x=>`<option value="${x.id}">${x.requisition_number}</option>`).join("")}</select>
-    <button class="go" onclick="copyPR()">Salin</button></div>
+   <div class="form-grid">
+   <div class="field required fg-2"><label>Vendor</label><select id="o_vend">${VEND.map(c=>`<option value="${c.id}">${c.vendor_name}</option>`).join("")}</select></div>
+   <div class="field required"><label>Tanggal</label><input type="date" id="o_date" value="${today()}"></div>
+   <div class="field"><label>PPN%</label><input id="o_tax" value="11"></div>
+   <div class="field"><label>FOB</label><select id="o_fob"><option value="">-</option><option>Shipping Point</option><option>Destination</option></select></div>
+   <div class="field"><label>Termin</label><input id="o_terms" value="NET 30"></div>
+   <div class="field"><label>Via</label><input id="o_shipp" value="" placeholder="Ekspedisi"></div>
+   <div class="field"><label>Kirim ke</label><input id="o_shipt" value="" placeholder="Alamat"></div>
+   <div class="field"><label>Perkiraan tiba</label><input type="date" id="o_exp" value=""></div>
+   <div class="field"><label>Dari PR</label><select id="o_pr"><option value="">- manual -</option>${pr.filter(x=>x.status==="OPEN").map(x=>`<option value="${x.id}">${x.requisition_number}</option>`).join("")}</select></div>
+   <button class="go" onclick="copyPR()">Salin</button>
    </div>
    <div id="og_wrap"></div>
    <button class="go" onclick="saveO2()">Simpan PO</button></div>
@@ -793,50 +802,53 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
   }
   if(sub==="receive"){
    const openPO=po.filter(x=>x.status!=="CLOSED");
-   h+=`<div class="card"><h3>Penerimaan Barang (stok masuk + utang akrual)</h3>
-   <div class="grid grid-2">
-   <div class="field required"><label>Vendor</label><select id="v_vend">${VEND.map(c=>`<option value="${c.id}">${c.vendor_name}</option>`).join("")}</select></div>
+   h+=`<div class="card"><h3>Penerimaan Barang (stok masuk)</h3>
+   <div class="form-grid">
+   <div class="field required fg-2"><label>Vendor</label><select id="v_vend">${VEND.map(c=>`<option value="${c.id}">${c.vendor_name}</option>`).join("")}</select></div>
    <div class="field required"><label>Tanggal</label><input type="date" id="v_date" value="${today()}"></div>
-    <div class="field"><label>Dari PO</label><select id="v_po" onchange="riLines()"><option value="">- langsung -</option>${openPO.map(x=>`<option value="${x.id}">${x.order_number} (${x.vendor_name})</option>`).join("")}</select></div>
-    <div class="field"><label>No SJ Vendor</label><input id="v_receipt" placeholder="Surat jalan pemasok"></div>
-    <div class="field"><label>Via</label><input id="v_ship" placeholder="Ekspedisi"></div>
-    </div>
+   <div class="field"><label>Dari PO</label><select id="v_po" onchange="riLines()"><option value="">- langsung -</option>${openPO.map(x=>`<option value="${x.id}">${x.order_number} (${x.vendor_name})</option>`).join("")}</select></div>
+   <div class="field"><label>No SJ Vendor</label><input id="v_receipt" placeholder="Surat jalan pemasok"></div>
+   <div class="field"><label>Via</label><input id="v_ship" placeholder="Ekspedisi"></div>
+   </div>
    <div id="vref"></div>
-   <div class="row">Barang <select id="v_item" onchange="unitCh('v')">${ITEMS.filter(i=>i.item_type==="INVENTORY").map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select>
-   Gudang <select id="v_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select>
-   Satuan <select id="v_unit"></select> Qty <input id="v_qty" value="10" style="width:60px"> Harga <input id="v_price" value="50000" style="width:120px"> Deskripsi <input id="v_desc" value="" style="width:140px">
-   <button class="go" onclick="addV()">+ baris langsung</button></div><div id="vlines"></div>
+   <div class="form-grid">
+   <div class="field fg-2"><label>Barang</label><select id="v_item" onchange="unitCh('v')">${ITEMS.filter(i=>i.item_type==="INVENTORY").map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select></div>
+   <div class="field"><label>Gudang</label><select id="v_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></div>
+   <div class="field"><label>Satuan</label><select id="v_unit"></select></div>
+   <div class="field"><label>Qty</label><input id="v_qty" value="10"></div>
+   <div class="field"><label>Harga</label><input id="v_price" value="50000"></div>
+   <div class="field fg-2"><label>Deskripsi</label><input id="v_desc" value=""></div>
+   <button class="go" onclick="addV()">+ baris</button></div><div id="vlines"></div>
    <button class="go" onclick="saveV()">Simpan Penerimaan</button></div>
    <div class="card"><h3>Riwayat Penerimaan</h3><table><tr><th>No</th><th>Tgl</th><th>Vendor</th><th>Subtotal</th><th>Status</th><th></th></tr>
    ${ri.map(x=>`<tr><td>${x.receive_number}</td><td>${x.transaction_date}</td><td>${x.vendor_name}</td><td>${fmt(x.subtotal)}</td><td>${st(x.status)}</td><td>${x.status==="POSTED"?`<button class="go danger" onclick="voidR(${x.id})">Void</button>`:""}</td></tr>`).join("")}</table></div>`;
   }
   if(sub==="invoice"){
    h+=`<div class="card"><h3>Buat Faktur Pembelian (Dr Persediaan + PPN / Cr Utang)</h3>
-   <div class="grid grid-2">
-   <div class="field required"><label>Vendor</label><div class="row"><select id="p_vend">${VEND.map(c=>`<option value="${c.id}">${esc(c.vendor_name)}</option>`).join("")}</select>
-   <button class="go" onclick="quickVend()">+ Baru</button></div></div>
+   <div class="form-grid">
+   <div class="field required fg-2"><label>Vendor</label><div class="row" style="gap:8px;flex-wrap:nowrap"><select id="p_vend">${VEND.map(c=>`<option value="${c.id}">${esc(c.vendor_name)}</option>`).join("")}</select><button class="go" onclick="quickVend()" style="padding:12px 14px">+</button></div></div>
    <div class="field"><label>Gudang</label><select id="p_wh">${WH.map(w=>`<option value="${w.id}">${esc(w.warehouse_name)}</option>`).join("")}</select></div>
    <div class="field required"><label>Tanggal</label><input type="date" id="p_date" value="${today()}"></div>
    <div class="field"><label>PPN</label>${taxSel("p_tax",11)}</div>
+   <div class="field"><label>Dari Receive</label><select id="p_ri" onchange="piRI()"><option value="">-</option>${ri.filter(x=>x.status==="POSTED").map(x=>`<option value="${x.id}">${x.receive_number}</option>`).join("")}</select></div>
+   <div class="field"><label>Dari PO</label><select id="p_po" onchange="piPO()"><option value="">-</option>${po.filter(x=>x.status!=="CLOSED").map(x=>`<option value="${x.id}">${x.order_number}</option>`).join("")}</select></div>
    </div>
-  <div class="row">Dari Receive <select id="p_ri" onchange="piRI()"><option value="">-</option>${ri.filter(x=>x.status==="POSTED").map(x=>`<option value="${x.id}">${x.receive_number}</option>`).join("")}</select>
-  Dari PO <select id="p_po" onchange="piPO()"><option value="">-</option>${po.filter(x=>x.status!=="CLOSED").map(x=>`<option value="${x.id}">${x.order_number}</option>`).join("")}</select></div>
-  <div id="pref"></div>
-  <div id="pg_wrap"></div><div id="plines" class="mut"></div>
-  <button class="go" onclick="saveBuy()">Simpan & Tambah Stok</button></div>
-  <div class="card"><h3>Riwayat Tagihan Vendor</h3><table><tr><th>No</th><th>Tgl</th><th>Vendor</th><th>Total</th><th>Dibayar</th><th>Retur</th><th>Sisa</th><th>Status</th><th></th></tr>
-   ${inv.map(x=>`<tr class="clickable-row" onclick="goDetail('purchase-invoice',${x.id})"><td><b>${x.invoice_number}</b></td><td>${x.transaction_date}</td><td>${x.vendor_name}</td><td>${fmt(x.total_amount)}</td><td>${fmt(x.paid)}</td><td>${fmt(x.returned||0)}</td><td>${fmt(x.outstanding)}</td><td>${st(x.status)}</td><td>${x.status!=="VOID"?`<button class="go danger" onclick="voidBuy(${x.id})">Void</button>`:""}</td></tr>`).join("")}</table></div>`;
+   <div id="pref"></div>
+   <div id="pg_wrap"></div><div id="plines" class="mut"></div>
+   <button class="go" onclick="saveBuy()">Simpan & Tambah Stok</button></div>
+   <div class="card"><h3>Riwayat Tagihan Vendor</h3><table><tr><th>No</th><th>Tgl</th><th>Vendor</th><th>Total</th><th>Dibayar</th><th>Retur</th><th>Sisa</th><th>Status</th><th></th></tr>
+    ${inv.map(x=>`<tr class="clickable-row" onclick="goDetail('purchase-invoice',${x.id})"><td><b>${x.invoice_number}</b></td><td>${x.transaction_date}</td><td>${x.vendor_name}</td><td>${fmt(x.total_amount)}</td><td>${fmt(x.paid)}</td><td>${fmt(x.returned||0)}</td><td>${fmt(x.outstanding)}</td><td>${st(x.status)}</td><td>${x.status!=="VOID"?`<button class="go danger" onclick="voidBuy(${x.id})">Void</button>`:""}</td></tr>`).join("")}</table></div>`;
   }
   if(sub==="return"){
    h+=`<div class="card"><h3>Retur Pembelian (parsial, stok keluar + jurnal)</h3>
-   <div class="grid grid-3">
-   <div class="field required"><label>Tagihan</label><select id="rp_inv">${inv.filter(x=>x.status!=="VOID").map(x=>`<option value="${x.id}">${x.invoice_number} (sisa ${fmt(x.outstanding)})</option>`).join("")}</select></div>
+   <div class="form-grid">
+   <div class="field required fg-2"><label>Tagihan</label><select id="rp_inv">${inv.filter(x=>x.status!=="VOID").map(x=>`<option value="${x.id}">${x.invoice_number} (sisa ${fmt(x.outstanding)})</option>`).join("")}</select></div>
    <div class="field required"><label>Barang</label><select id="rp_item">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select></div>
    <div class="field"><label>Gudang</label><select id="rp_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></div>
-   <div class="field"><label>Qty</label><input id="rp_qty" value="1" style="width:60px"></div>
+   <div class="field"><label>Qty</label><input id="rp_qty" value="1"></div>
    <div class="field required"><label>Tanggal</label><input type="date" id="rp_date" value="${today()}"></div>
+   <button class="go" onclick="saveRP()">Catat Retur</button>
    </div>
-   <div class="row" style="margin-top:12px"><button class="go" onclick="saveRP()">Catat Retur</button></div>
   <table><tr><th>No Retur</th><th>Tagihan</th><th>Tgl</th><th>Total</th></tr>${rets.map(r=>`<tr><td>${r.return_number}</td><td>${r.invoice_number}</td><td>${r.transaction_date}</td><td>${fmt(r.total_amount)}</td></tr>`).join("")}</table></div>`;
   }
   A.innerHTML=h;
@@ -848,31 +860,29 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
  if(cur==="Kas & Bank"){
   const p=await api("/api/payments");window._ag=await api("/api/aging?type=AR");window._agAP=await api("/api/aging?type=AP");
    A.innerHTML=`<div class="card"><h3>Kas & Bank — Pelunasan per Invoice (parsial didukung)</h3>
-   <div class="grid grid-2">
-   <div class="field required"><label>Jenis</label><select id="k_kind" onchange="kindCh()"><option value="AR">Terima dari Customer (Dr Kas / Cr Piutang)</option><option value="AP">Bayar ke Vendor (Dr Utang / Cr Kas)</option></select></div>
+   <div class="form-grid">
+   <div class="field required fg-2"><label>Jenis</label><select id="k_kind" onchange="kindCh()"><option value="AR">Terima dari Customer (Dr Kas / Cr Piutang)</option><option value="AP">Bayar ke Vendor (Dr Utang / Cr Kas)</option></select></div>
    <div class="field required"><label>Akun Kas</label>${coaSel("k_cash")}</div>
    <div class="field required"><label>Kontak</label><select id="k_c"></select></div>
    <div class="field"><label>Invoice</label><select id="k_inv" onchange="invCh()"></select></div>
-   <div class="field required"><label>Nominal</label><div class="row"><input id="k_alloc" style="width:130px"><button class="go" onclick="addAlloc()">+ Alokasi</button></div></div>
+   <div class="field required"><label>Nominal</label><div class="row" style="gap:8px;flex-wrap:nowrap"><input id="k_alloc"><button class="go" onclick="addAlloc()" style="padding:12px 14px">+</button></div></div>
+   <div class="field required"><label>Tanggal</label><input type="date" id="k_date" value="${today()}"></div>
+   <div class="field"><label>Catatan</label><input id="k_note" value=""></div>
+   <div class="field"><label>Kurs</label><input id="k_rate" type="number" min="1" value="1" step="0.01"></div>
+   <div class="field"><label>PPh23 No</label><input id="k_pph23" value="" placeholder="Bukti potong"></div>
+   <div class="field"><label>PPh23 Rp</label><input id="k_pph23amt" value="0" type="number"></div>
    </div>
    <div id="alocs"></div>
-   <div class="grid grid-2">
-   <div class="field required"><label>Tanggal</label><input type="date" id="k_date" value="${today()}"></div>
-    <div class="field"><label>Catatan</label><input id="k_note" value=""></div>
-    <div class="field"><label>Kurs</label><input id="k_rate" type="number" min="1" value="1" step="0.01" style="width:100px"></div>
-    <div class="field"><label>Bukti Potong PPh23 No</label><input id="k_pph23" value="" placeholder="No. bukti potong"></div>
-    <div class="field"><label>PPh23 Rp</label><input id="k_pph23amt" value="0" type="number"></div>
-    </div>
    <div class="row" style="margin-top:12px">
    <button class="go" onclick="savePay()">Catat Pembayaran</button></div>
   <p class="mut">Tips rekonsiliasi: bandingkan saldo akun 11001/11002 di Trial Balance dengan mutasi di bawah. Selisih = belum rekonsil.</p></div>
    <div class="card"><h3>Transfer Antar Kas / Bank</h3>
-   <div class="grid grid-2">
+   <div class="form-grid">
    <div class="field required"><label>Dari</label>${coaSel("t_from")}</div>
    <div class="field required"><label>Ke</label>${coaSel("t_to")}</div>
    <div class="field required"><label>Nominal</label><input id="t_amt" value="500000"></div>
    <div class="field required"><label>Tanggal</label><input type="date" id="t_date" value="${today()}"></div>
-   <div class="field"><label>Catatan</label><input id="t_note" value="Transfer dana"></div>
+   <div class="field fg-2"><label>Catatan</label><input id="t_note" value="Transfer dana"></div>
    </div>
    <div class="row" style="margin-top:12px"><button class="go" onclick="saveT()">Transfer</button></div></div>
    <div class="card"><h3>Rekonsiliasi Bank (koran vs sistem)</h3>
@@ -981,27 +991,27 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
    <table><tr><th>Barang</th><th>Gudang</th><th>Stok</th><th>Avg Cost</th></tr>${s.map(x=>`<tr><td>${x.item_code} ${x.item_name}</td><td>${x.warehouse}</td><td>${x.stock}</td><td>${fmt(x.avg_cost)}</td></tr>`).join("")}</table>
    <div class="row">Lihat kartu: <select id="sc">${ITEMS.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select><button class="go" onclick="card()">Tampilkan</button></div><div id="card"></div></div>
    <div class="card"><h3>💡 Saran Order Cerdas (30 hari terakhir, buffer 10 hari)</h3><div id="reorder">Memuat…</div></div>
-   <div class="card"><h3>Stock Opname (penyesuaian + jurnal selisih)</h3>
-   <div class="grid grid-2">
-   <div class="field required"><label>Barang</label><select id="o_item">${invItems.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select></div>
-   <div class="field required"><label>Gudang</label><select id="o_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></div>
-   <div class="field"><label>Stok fisik</label><input id="o_qty" style="width:80px"></div>
-   <div class="field required"><label>Tanggal</label><input type="date" id="o_date" value="${today()}"></div>
-   </div>
-   <div class="row" style="margin-top:12px"><button class="go" onclick="opname()">Simpan Opname</button></div></div>
-    <div class="card"><h3>Mutasi Antar Gudang</h3>
-    <div class="grid grid-2">
-    <div class="field required"><label>Barang</label><select id="t_item">${invItems.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select></div>
-    <div class="field required"><label>Dari</label><select id="t_from">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></div>
-    <div class="field required"><label>Ke</label><select id="t_to">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></div>
-    <div class="field"><label>Qty</label><input id="t_qty" style="width:80px"></div>
-    <div class="field required"><label>Tanggal</label><input type="date" id="t_date" value="${today()}"></div>
-    <div class="field"><label>Catatan</label><input id="t_note" placeholder="keterangan"></div>
-    <div class="field"><label>Ongkir Rp (opsional)</label><input id="t_ship" value="0" type="number"></div>
-    <div class="field"><label>Kas ongkir</label><select id="t_cash">${COA.filter(c=>c.account_code.startsWith("110")).map(c=>`<option value="${c.id}">${c.account_code}</option>`).join("")}</select></div>
-    <div class="field"><label>Beban kirim</label><select id="t_exp">${COA.filter(c=>c.account_type==="EXPENSE").map(c=>`<option value="${c.id}">${c.account_code} ${c.account_name}</option>`).join("")}</select></div>
-    </div>
-    <div class="row" style="margin-top:12px"><button class="go" onclick="transfer()">Pindahkan</button></div></div>`;
+    <div class="card"><h3>Stock Opname (penyesuaian + jurnal selisih)</h3>
+    <div class="form-grid">
+    <div class="field required fg-2"><label>Barang</label><select id="o_item">${invItems.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select></div>
+    <div class="field required"><label>Gudang</label><select id="o_wh">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></div>
+    <div class="field"><label>Stok fisik</label><input id="o_qty"></div>
+    <div class="field required"><label>Tanggal</label><input type="date" id="o_date" value="${today()}"></div>
+    <button class="go" onclick="opname()">Simpan Opname</button>
+    </div></div>
+     <div class="card"><h3>Mutasi Antar Gudang</h3>
+     <div class="form-grid">
+     <div class="field required"><label>Barang</label><select id="t_item">${invItems.map(i=>`<option value="${i.id}">${i.item_code}</option>`).join("")}</select></div>
+     <div class="field required"><label>Dari</label><select id="t_from">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></div>
+     <div class="field required"><label>Ke</label><select id="t_to">${WH.map(w=>`<option value="${w.id}">${w.warehouse_name}</option>`).join("")}</select></div>
+     <div class="field"><label>Qty</label><input id="t_qty"></div>
+     <div class="field required"><label>Tanggal</label><input type="date" id="t_date" value="${today()}"></div>
+     <div class="field"><label>Catatan</label><input id="t_note" placeholder="keterangan"></div>
+     <div class="field"><label>Ongkir Rp</label><input id="t_ship" value="0" type="number"></div>
+     <div class="field"><label>Kas ongkir</label><select id="t_cash">${COA.filter(c=>c.account_code.startsWith("110")).map(c=>`<option value="${c.id}">${c.account_code}</option>`).join("")}</select></div>
+     <div class="field"><label>Beban kirim</label><select id="t_exp">${COA.filter(c=>c.account_type==="EXPENSE").map(c=>`<option value="${c.id}">${c.account_code} ${c.account_name}</option>`).join("")}</select></div>
+     <button class="go" onclick="transfer()">Pindahkan</button>
+     </div></div>`;
    }
    if(stab==='sa'){
     h+=`<div class="grid" style="grid-template-columns:1fr 1fr;gap:24px">
