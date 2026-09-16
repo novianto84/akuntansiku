@@ -490,6 +490,28 @@ def init_db():
         except Exception: pass
     c.execute("INSERT OR IGNORE INTO chart_of_accounts(account_code,account_name,account_type) VALUES('13003','Barang Dalam Proses (WIP)','ASSET')")
     c.commit()
+    # --- Metode HPP global perusahaan (Accurate: ditetapkan di awal, berlaku semua item) ---
+    try: c.execute("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT DEFAULT '')")
+    except Exception: pass
+    try:
+        if not c.execute("SELECT COUNT(*) n FROM settings WHERE key='cost_method'").fetchone()["n"]:
+            # DB lama: inferensi — FIFO bila ada pemakaian layer riil, selain itu AVERAGE
+            use_fifo = False
+            try:
+                use_fifo = c.execute("""SELECT COUNT(*) n FROM items WHERE cost_method='FIFO'
+                    AND id IN (SELECT DISTINCT item_id FROM inventory_layers WHERE qty_remaining>0.005)""").fetchone()["n"] > 0
+            except Exception:
+                pass
+            c.execute("INSERT INTO settings(key,value) VALUES('cost_method',?)", ("FIFO" if use_fifo else "AVERAGE",))
+        # Selaraskan kolom display per-item ke metode global
+        try:
+            g = c.execute("SELECT value FROM settings WHERE key='cost_method'").fetchone()["value"] or "AVERAGE"
+            c.execute("UPDATE items SET cost_method=?", (g,))
+        except Exception:
+            pass
+    except Exception:
+        pass
+    c.commit()
     # --- Tahap1: bulatkan semua nominal uang ke Rp integer (tanpa sen) ---
     try:
         money_tables = {
@@ -648,12 +670,17 @@ def stock_of(c, item_id, warehouse_id=None):
         sql += " AND warehouse_id=?"; args.append(warehouse_id)
     return c.execute(sql,args).fetchone()["s"] or 0
 
-def is_fifo(c, item_id):
+def get_cost_method(c):
+    """Metode HPP global perusahaan (ditetapkan di awal, berlaku semua item)."""
     try:
-        r = c.execute("SELECT cost_method FROM items WHERE id=?", (item_id,)).fetchone()
-        return (r["cost_method"] or "AVERAGE") == "FIFO"
+        r = c.execute("SELECT value FROM settings WHERE key='cost_method'").fetchone()
+        v = (r["value"] if r else "AVERAGE") or "AVERAGE"
+        return v if v in ("AVERAGE","FIFO") else "AVERAGE"
     except Exception:
-        return False
+        return "AVERAGE"
+
+def is_fifo(c, item_id=None):
+    return get_cost_method(c) == "FIFO"
 
 def add_layer(c, item_id, warehouse_id, date, ref_type, ref_id, qty, unit_cost):
     c.execute("""INSERT INTO inventory_layers(item_id,warehouse_id,transaction_date,reference_type,reference_id,
@@ -689,10 +716,10 @@ def stock_value(c, item_id, warehouse_id):
     return rp_int(stock_of(c,item_id,warehouse_id)*(it["avg_cost"] or 0))
 
 def rebuild_fifo(c, item_id):
-    """Bangun ulang layer FIFO dari stok saat ini @ avg_cost (dipakai saat ganti metode)."""
+    """Bangun ulang layer FIFO dari stok saat ini @ avg_cost (dipakai saat ganti metode global pre-transaksi)."""
     it = c.execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
     c.execute("DELETE FROM inventory_layers WHERE item_id=?", (item_id,))
-    if (it["cost_method"] or "AVERAGE")=="FIFO":
+    if get_cost_method(c)=="FIFO":
         for w in q(c,"SELECT id FROM warehouses"):
             s = stock_of(c,item_id,w["id"])
             if s > 0.005:
@@ -1096,6 +1123,10 @@ class H(BaseHTTPRequestHandler):
                 return self._json(rows)
             if path=="/api/payments": return self._json(q(c,"SELECT * FROM payments ORDER BY id DESC LIMIT 200"))
             if path=="/api/taxes": return self._json(q(c,"SELECT * FROM taxes WHERE is_active=1 ORDER BY rate DESC, tax_code"))
+            if path=="/api/settings":
+                m = get_cost_method(c)
+                locked = c.execute("SELECT COUNT(*) n FROM inventory_transactions WHERE reference_type NOT IN ('OPENING','REBUILD')").fetchone()["n"] > 0
+                return self._json({"cost_method":m,"locked":locked})
             if path=="/api/categories": return self._json(q(c,"SELECT * FROM item_categories ORDER BY category_name"))
             if path=="/api/groups": return self._json(q(c,"SELECT g.*,c.category_name FROM item_groups g LEFT JOIN item_categories c ON c.id=g.category_id ORDER BY g.group_name"))
             if path=="/api/asset-types": return self._json(q(c,"SELECT * FROM asset_types ORDER BY type_name"))
@@ -1523,7 +1554,7 @@ class H(BaseHTTPRequestHandler):
                         "/api/assets","/api/assets/depreciate",
                         "/api/webhooks","/api/users","/api/salespersons","/api/payroll",
                         "/api/branches","/api/warehouses/branch","/api/reconcile/auto","/api/reconcile/manual","/api/reconcile/unmatch",
-                        "/api/employees","/api/leaves/decide","/api/items/method","/api/items/deactivate","/api/restore",
+                        "/api/employees","/api/leaves/decide","/api/settings","/api/items/deactivate","/api/restore",
                         "/api/quotations/close","/api/quotations/delete","/api/sales-orders/close","/api/sales-orders/update","/api/sales-orders/delete","/api/deliveries/void",
                         "/api/requisitions/close","/api/requisitions/delete","/api/purchase-orders/close","/api/purchase-orders/delete","/api/receives/void",
                         "/api/period-end","/api/taxes","/api/approvals/decide","/api/assets/dispose",
@@ -1966,11 +1997,22 @@ class H(BaseHTTPRequestHandler):
             if path=="/api/warehouses":
                 c.execute("INSERT INTO warehouses(warehouse_code,warehouse_name,address) VALUES(?,?,?)",(b["warehouse_code"],b["warehouse_name"],b.get("address",""))); c.commit()
                 return self._json({"ok":True})
-            if path=="/api/items/method":
-                if b.get("method") not in ("AVERAGE","FIFO"): raise ValueError("Metode harus AVERAGE/FIFO")
-                c.execute("UPDATE items SET cost_method=? WHERE id=?",(b["method"],b["id"]))
-                rebuild_fifo(c, b["id"])
-                c.commit(); return self._json({"ok":True,"method":b["method"]})
+            if path=="/api/settings":
+                # Ubah pengaturan perusahaan. cost_method hanya bisa diubah sebelum ada transaksi
+                # persediaan riil (saldo awal OPENING tidak mengunci — masih masa setup awal).
+                if "cost_method" in b:
+                    m = b.get("cost_method")
+                    if m not in ("AVERAGE","FIFO"): raise ValueError("Metode harus AVERAGE/FIFO")
+                    ntrans = c.execute("SELECT COUNT(*) n FROM inventory_transactions WHERE reference_type NOT IN ('OPENING','REBUILD')").fetchone()["n"]
+                    if ntrans:
+                        raise ValueError("Metode HPP terkunci: sudah ada transaksi persediaan (ditetapkan di awal)")
+                    c.execute("INSERT INTO settings(key,value) VALUES('cost_method',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (m,))
+                    c.execute("UPDATE items SET cost_method=?", (m,))
+                    c.commit()
+                    try: audit_log(me,"POST",path,200,after={"cost_method":m},detail=f"Ubah metode HPP global ke {m}",ip=client_ip(self))
+                    except Exception: pass
+                    return self._json({"ok":True,"cost_method":m})
+                return self._json({"error":"pengaturan tidak dikenal"},400)
             if path=="/api/items":
                 code = (b.get("item_code") or "").strip() or next_no(c,"BRG","items","item_code")
                 if c.execute("SELECT COUNT(*) n FROM items WHERE item_code=?",(code,)).fetchone()["n"]:
@@ -1983,8 +2025,7 @@ class H(BaseHTTPRequestHandler):
                 inv_acc = b.get("inventory_account_id") or (acct(c,"13001") if itype=="INVENTORY" else None)
                 cogs_acc = b.get("cogs_account_id") or (acct(c,"51001") if itype=="INVENTORY" else None)
                 pp = rp_int(b.get("purchase_price",0)); sp_ = rp_int(b.get("sales_price",0))
-                method = b.get("cost_method","AVERAGE")
-                if method not in ("AVERAGE","FIFO"): method = "AVERAGE"
+                method = get_cost_method(c)  # selalu ikut metode global perusahaan
                 cur = c.execute("INSERT INTO items(item_code,item_name,item_type,base_unit,inventory_account_id,sales_account_id,cogs_account_id,purchase_price,sales_price,avg_cost,cost_method,is_active) VALUES(?,?,?,?,?,?,?,?,?,?,?,1)",
                     (code,b["item_name"].strip(),itype,b.get("base_unit","PCS") or "PCS",inv_acc,sales_acc,cogs_acc,pp,sp_,pp,method))
                 iid = cur.lastrowid
@@ -2990,7 +3031,7 @@ class H(BaseHTTPRequestHandler):
                         if itype not in ("INVENTORY","SERVICE","NON_INVENTORY"): itype="INVENTORY"
                         pp=rp_int(r.get("purchase_price",0)); sp_=rp_int(r.get("sales_price",0))
                         c.execute("INSERT INTO items(item_code,item_name,item_type,base_unit,inventory_account_id,sales_account_id,cogs_account_id,purchase_price,sales_price,avg_cost,cost_method,is_active) VALUES(?,?,?,?,?,?,?,?,?,?,?,1)",
-                            (code,name,itype,(r.get("base_unit") or "PCS").strip(),acct(c,"13001") if itype=="INVENTORY" else None,acct(c,"41001"),acct(c,"51001") if itype=="INVENTORY" else None,pp,sp_,pp,"AVERAGE"))
+                            (code,name,itype,(r.get("base_unit") or "PCS").strip(),acct(c,"13001") if itype=="INVENTORY" else None,acct(c,"41001"),acct(c,"51001") if itype=="INVENTORY" else None,pp,sp_,pp,get_cost_method(c)))
                         n+=1
                     except Exception as e:
                         errs.append(f"baris {i}: {e}")
@@ -3163,7 +3204,7 @@ class H(BaseHTTPRequestHandler):
                 jasa = c.execute("SELECT id FROM items WHERE item_type='SERVICE' LIMIT 1").fetchone()
                 if not jasa:
                     curj = c.execute("INSERT INTO items(item_code,item_name,item_type,base_unit,sales_account_id,sales_price,is_active,cost_method) VALUES(?,?,?,?,?,?,?,?)",
-                        ("JASA-PROYEK","Jasa Proyek","SERVICE","JAM",p["revenue_account_id"] or acct(c,"42001"),amount,1,"AVERAGE"))
+                        ("JASA-PROYEK","Jasa Proyek","SERVICE","JAM",p["revenue_account_id"] or acct(c,"42001"),amount,1,get_cost_method(c)))
                     jasa = {"id":curj.lastrowid}
                 inv_no = next_no(c,"INV","sales_invoices","invoice_number")
                 cust = c.execute("SELECT * FROM customers WHERE id=?",(p["customer_id"],)).fetchone()

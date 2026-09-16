@@ -508,7 +508,7 @@ window.editItem=id=>{curDetail="item";curDetailId=id;render();};
 window.saveEditItem=async id=>{try{await api("/api/items/update",{method:"POST",body:JSON.stringify({id,item_name:$("#ei_name").value,purchase_price:+$("#ei_bp").value,sales_price:+$("#ei_sp").value,item_type:$("#ei_type").value})});await loadM();alert("Tersimpan");render();}catch(e){alert(e.message)}};
 window.deactivateIT=async(id,active)=>{if(!await confirmModal(active?"Aktifkan kembali barang ini?":"Nonaktifkan barang ini? (stok harus 0)"))return;try{await api("/api/items/deactivate",{method:"POST",body:JSON.stringify({id,is_active:active?1:0})});await loadM();render();}catch(e){alert(e.message)}};
 window.saveIT=async()=>{try{
- const body={item_code:$("#ni_c").value.trim(),item_name:$("#ni_n").value.trim(),item_type:$("#ni_t").value,base_unit:$("#ni_u").value.trim()||"PCS",purchase_price:+$("#ni_bp").value||0,sales_price:+$("#ni_sp").value||0,cost_method:$("#ni_m").value,opening_qty:+$("#ni_oq").value||0,warehouse_id:+$("#ni_wh").value||0};
+ const body={item_code:$("#ni_c").value.trim(),item_name:$("#ni_n").value.trim(),item_type:$("#ni_t").value,base_unit:$("#ni_u").value.trim()||"PCS",purchase_price:+$("#ni_bp").value||0,sales_price:+$("#ni_sp").value||0,opening_qty:+$("#ni_oq").value||0,warehouse_id:+$("#ni_wh").value||0};
  if(!body.item_name)return alert("Nama barang wajib diisi");
  if(body.opening_qty>0&&!body.warehouse_id)return alert("Pilih gudang untuk stok awal");
  const r=await api("/api/items",{method:"POST",body:JSON.stringify(body)});await loadM();alert("Barang ditambah: "+r.item_code);render();}catch(e){alert(e.message)}};
@@ -957,15 +957,17 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
   window._jl=[];
   api("/api/period-locks").then(l=>{$("#locks").innerHTML=l.length?("Terkunci: "+l.map(x=>x.year+" (oleh "+x.locked_by+")").join(", ")):"Belum ada periode terkunci.";}).catch(()=>{$("#locks").textContent="";});
  }
-  if(cur==="Persediaan"){
-   const s=await api("/api/stock");
-   const invItems=ITEMS.filter(i=>i.item_type==="INVENTORY");
-   const stab=window._ssub||"default";
-   let h=`<div class="row">${[["default","📦 Kartu Stok"],["sa","📝 Stok Opname"],["adj","🔧 Adjustment"]].map(t=>`<button class="go"${stab===t[0]?"":' style="opacity:.55"'} onclick="_ssub='${t[0]}';render()">${t[1]}</button>`).join("")}</div>`;
-    if(stab==="default"){
-    const stkById={};s.forEach(x=>{stkById[x.item_code]=(stkById[x.item_code]||0)+x.stock;});
-    h+=`<div class="card"><h3>📦 Daftar Barang</h3>
-    <table><tr><th>Kode</th><th>Nama</th><th>Tipe</th><th>Satuan</th><th>Stok</th><th>Beli</th><th>Jual</th><th>Metode</th><th>Status</th><th></th></tr>${ITEMS.map(i=>`<tr class="clickable-row" onclick="editItem(${i.id})"><td>${esc(i.item_code)}</td><td>${esc(i.item_name)}</td><td>${esc(i.item_type)}</td><td>${esc(i.base_unit)}</td><td>${stkById[i.item_code]??i.stock??0}</td><td>${fmt(i.purchase_price||0)}</td><td>${fmt(i.sales_price||0)}</td><td>${esc(i.cost_method||"AVERAGE")}</td><td>${(i.is_active??1)?"Aktif":"Nonaktif"}</td><td><button class="go danger" onclick="event.stopPropagation();deactivateIT(${i.id},${(i.is_active??1)?0:1})">${(i.is_active??1)?"Nonaktif":"Aktif"}</button></td></tr>`).join("")}</table>
+   if(cur==="Persediaan"){
+    const s=await api("/api/stock");
+    const invItems=ITEMS.filter(i=>i.item_type==="INVENTORY");
+    let GM="AVERAGE";try{GM=(await api("/api/settings")).cost_method||"AVERAGE";}catch(e){}
+    const stab=window._ssub||"default";
+    let h=`<div class="row">${[["default","📦 Kartu Stok"],["sa","📝 Stok Opname"],["adj","🔧 Adjustment"]].map(t=>`<button class="go"${stab===t[0]?"":' style="opacity:.55"'} onclick="_ssub='${t[0]}';render()">${t[1]}</button>`).join("")}</div>`;
+     if(stab==="default"){
+     const stkById={};s.forEach(x=>{stkById[x.item_code]=(stkById[x.item_code]||0)+x.stock;});
+     h+=`<div class="card"><h3>📦 Daftar Barang</h3>
+     <p class="mut">Metode HPP perusahaan: <b>${esc(GM)}</b> (berlaku untuk semua barang — diatur di Master → Sistem → Pengaturan)</p>
+     <table><tr><th>Kode</th><th>Nama</th><th>Tipe</th><th>Satuan</th><th>Stok</th><th>Beli</th><th>Jual</th><th>Status</th><th></th></tr>${ITEMS.map(i=>`<tr class="clickable-row" onclick="editItem(${i.id})"><td>${esc(i.item_code)}</td><td>${esc(i.item_name)}</td><td>${esc(i.item_type)}</td><td>${esc(i.base_unit)}</td><td>${stkById[i.item_code]??i.stock??0}</td><td>${fmt(i.purchase_price||0)}</td><td>${fmt(i.sales_price||0)}</td><td>${(i.is_active??1)?"Aktif":"Nonaktif"}</td><td><button class="go danger" onclick="event.stopPropagation();deactivateIT(${i.id},${(i.is_active??1)?0:1})">${(i.is_active??1)?"Nonaktif":"Aktif"}</button></td></tr>`).join("")}</table>
     <div class="grid grid-3" style="margin-top:12px">
     <div class="field"><label>Kode (kosong=auto)</label><input id="ni_c" placeholder="BRG-..."></div>
     <div class="field required"><label>Nama</label><input id="ni_n" placeholder="Nama barang"></div>
@@ -973,7 +975,6 @@ window.showStockCard=async id=>{try{const r=await api("/api/stock-card?item_id="
     <div class="field"><label>Satuan</label><input id="ni_u" value="PCS" style="width:80px"></div>
     <div class="field"><label>Harga Beli</label><input id="ni_bp" value="0" type="number"></div>
     <div class="field"><label>Harga Jual</label><input id="ni_sp" value="0" type="number"></div>
-    <div class="field"><label>Metode HPP</label><select id="ni_m"><option>AVERAGE</option><option>FIFO</option></select></div>
     <div class="field"><label>Gudang stok awal</label><select id="ni_wh"><option value="">—</option>${WH.map(w=>`<option value="${w.id}">${esc(w.warehouse_name)}</option>`).join("")}</select></div>
     <div class="field"><label>Stok awal</label><input id="ni_oq" value="0" type="number"></div>
     </div>
@@ -1285,9 +1286,11 @@ if(cur==="Laporan"){
    </div>
    <div class="row" style="margin-top:12px"><button class="go" onclick="saveNU()">Tambah User</button></div></div>
    <div class="card" style="cursor:pointer" onclick="loadSistem('currency')"><h3>💱 Mata Uang</h3><p>Konfigurasi mata uang & kurs</p></div>`:""}
+   ${["ADMIN","MANAGER"].includes(ME.role)?`<div class="card"><h3>⚙️ Pengaturan Perusahaan</h3><div id="sys_settings">Memuat…</div></div>`:""}
     ${ME.role!=="KASIR"?`<div class="card"><h3>Log Aktivitas (audit trail)</h3>
     <div class="row"><button class="go" onclick="loadLogs('all')">Semua</button><button class="go" onclick="loadLogs('ok')">Sukses</button><button class="go danger" onclick="loadLogs('fail')">Gagal ≥400</button></div>
     <div id="log_list"><table><tr><th>Waktu</th><th>User</th><th>Aksi</th><th>Status</th><th></th></tr>${logs.slice(0,50).map((l,ix)=>`<tr><td>${esc(l.created_at||"")}</td><td>${esc(l.username)}</td><td>${esc(l.action)}</td><td>${l.status>=400?`<span class="bdg b-VOID">${l.status}</span>`:(l.status||200)}</td><td><button class="go" onclick='viewLog(${ix})'>Detail</button></td></tr>`).join("")}</table></div></div>`:""}`;
+    loadSettings();
   }
   else{
    A.innerHTML=`<div class="card"><h3>Master Data</h3><p class="mut">Pilih sub-menu di panel kiri untuk mengelola data master.</p></div>`;
@@ -1789,7 +1792,7 @@ window.dlEfaktur=()=>{const m=$("#ef_m").value;window.open(`/api/reports/efaktur
 window.csvTB=async()=>{const tb=await api("/api/reports/trial-balance");csv("trial-balance.csv",[["Kode","Akun","Tipe","Debit","Kredit"],...tb.map(r=>[r.account_code,r.account_name,r.account_type,r.d,r.k])]);};
 window.csvStock=async()=>{const s=await api("/api/stock");csv("stok.csv",[["Kode","Barang","Gudang","Stok","AvgCost","Nilai"],...s.map(x=>[x.item_code,x.item_name,x.warehouse,x.stock,x.avg_cost,x.value])]);};
 window.saveU=async()=>{try{await api("/api/units",{method:"POST",body:JSON.stringify({item_id:+$("#u_item").value,unit_code:$("#u_code").value,conversion:+$("#u_conv").value})});loadM().then(render);}catch(e){alert(e.message)}};
-window.setMethod=async(id,m)=>{if(!confirm("Ubah metode HPP ke "+m+"? Layer FIFO dibangun ulang dari stok saat ini."))return;try{await api("/api/items/method",{method:"POST",body:JSON.stringify({id,method:m})});loadM().then(render);}catch(e){alert(e.message)}};
+window.setMethod=async()=>{alert("Metode HPP kini pengaturan perusahaan (Master → Sistem → Pengaturan), berlaku untuk semua barang.");};
 window.saveNU=async()=>{try{await api("/api/users",{method:"POST",body:JSON.stringify({username:$("#nu_u").value,password:$("#nu_p").value,full_name:$("#nu_n").value,role:$("#nu_r").value})});render();}catch(e){alert(e.message)}};
 window.savePay=async()=>{
  try{const tot=_al.reduce((a,x)=>a+x.amount,0);
@@ -1961,6 +1964,11 @@ window.pjBillGo=async id=>{try{const r=await api("/api/projects/bill",{method:"P
 window.pjEnd=async id=>{if(!await confirmModal("Tutup proyek ini? Akui biaya ke COGS & laba/rugi."))return;try{const r=await api("/api/projects/ending",{method:"POST",body:JSON.stringify({project_id:id,date:today()})});alert("Proyek ditutup. Laba: "+fmt(r.profit));render();}catch(e){alert(e.message)}};
 window.loadLogs=async(f)=>{try{const l=await api("/api/activity?status="+f);window._logs=l;
  $("#log_list").innerHTML=`<table><tr><th>Waktu</th><th>User</th><th>Aksi</th><th>Status</th><th></th></tr>${l.slice(0,100).map((x,ix)=>`<tr><td>${esc(x.created_at||"")}</td><td>${esc(x.username)}</td><td>${esc(x.action)}</td><td>${x.status>=400?`<span class="bdg b-VOID">${x.status}</span>`:(x.status||200)}</td><td><button class="go" onclick='viewLog(${ix})'>Detail</button></td></tr>`).join("")}</table>`;}catch(e){alert(e.message)}};
+window.loadSettings=async()=>{const el=$("#sys_settings");if(!el)return;try{const s=await api("/api/settings");
+ el.innerHTML=`<div class="form-grid"><div class="field"><label>Metode HPP persediaan (berlaku semua barang)</label>
+ <select id="set_cm" ${s.locked?"disabled":""}><option value="AVERAGE"${s.cost_method==="AVERAGE"?" selected":""}>AVERAGE (rata-rata)</option><option value="FIFO"${s.cost_method==="FIFO"?" selected":""}>FIFO (masuk pertama keluar pertama)</option></select></div>
+ ${s.locked?`<p class="mut">🔒 Terkunci: sudah ada transaksi persediaan. Metode ditetapkan di awal dan tidak bisa diubah.</p>`:`<button class="go" onclick="saveSettings()">Simpan</button>`}</div>`;}catch(e){el.textContent=e.message;}};
+window.saveSettings=async()=>{if(!await confirmModal("Tetapkan metode HPP "+$("#set_cm").value+" untuk SEMUA barang?"))return;try{await api("/api/settings",{method:"POST",body:JSON.stringify({cost_method:$("#set_cm").value})});await loadM();alert("Metode HPP ditetapkan.");render();}catch(e){alert(e.message)}};
 window.viewLog=ix=>{const l=(window._logs||[])[ix];if(!l)return alert("Data tidak ditemukan");
  alert(`[${l.created_at}] ${l.username}\n${l.method||""} ${l.path||l.action} → ${l.status||""}\nRef: ${l.ref_type||""} ${l.ref_id||""}\nDetail: ${l.detail||"-"}\nBefore: ${(l.before_json||"-").slice(0,500)}\nAfter: ${(l.after_json||"-").slice(0,500)}`);};
 window.calcPPh=async()=>{try{const r=await api("/api/payroll/calc",{method:"POST",body:JSON.stringify({gross:Math.round(+$("#pr_g").value||0)})});$("#pr_out").textContent=`Bruto ${fmt(r.gross)} TER ${(r.rate*100).toFixed(2)}% → PPh ${fmt(r.pph21)} Net ${fmt(r.net)}`;}catch(e){alert(e.message)}};
