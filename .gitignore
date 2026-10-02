@@ -7,3 +7,12 @@ __pycache__/
 *.pyc
 .opencode/
 .tool-output/
+
+# Keep the project-specific MitraSP OpenCode agents versioned.
+!.opencode/
+.opencode/*
+!.opencode/agent/
+.opencode/agent/*
+!.opencode/agent/mitrasp-manager.md
+!.opencode/agent/mitrasp-auditor.md
+!.opencode/agent/mitrasp-programmer.md
