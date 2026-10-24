@@ -16,3 +16,11 @@ __pycache__/
 !.opencode/agent/mitrasp-manager.md
 !.opencode/agent/mitrasp-auditor.md
 !.opencode/agent/mitrasp-programmer.md
+
+# crm/ is its OWN git repository (github.com/novianto84/mitrasp-app).
+# It must never be staged here as a gitlink/submodule: doing so records only a
+# commit id and silently drops every file from this repo.
+crm/
+
+# Scratch sandbox from the Sep-2026 ops-activation runs (throwaway probes).
+_sandbox_ops_activation/

@@ -6,45 +6,45 @@
     "filesystem": {
       "type": "local",
       "command": [
-        "npx.cmd",
+        "npx",
         "-y",
         "@modelcontextprotocol/server-filesystem",
-        "C:/Users/khdan_yksn3uv/Documents/Opencode/CRM Apps"
+        "/home/anto/akuntansiku/crm"
       ],
       "enabled": true
     },
     "memory": {
       "type": "local",
-      "command": ["npx.cmd", "-y", "@modelcontextprotocol/server-memory"],
+      "command": ["npx", "-y", "@modelcontextprotocol/server-memory"],
       "enabled": true,
       "environment": {
-        "MEMORY_FILE_PATH": "C:/Users/khdan_yksn3uv/Documents/Opencode/CRM Apps/.opencode/memory.jsonl"
+        "MEMORY_FILE_PATH": "/home/anto/akuntansiku/crm/.opencode/memory.jsonl"
       }
     },
     "sequential-thinking": {
       "type": "local",
-      "command": ["npx.cmd", "-y", "@modelcontextprotocol/server-sequential-thinking"],
+      "command": ["npx", "-y", "@modelcontextprotocol/server-sequential-thinking"],
       "enabled": false
     },
     "fetch": {
       "type": "local",
-      "command": ["npx.cmd", "-y", "@modelcontextprotocol/server-fetch"],
+      "command": ["npx", "-y", "@modelcontextprotocol/server-fetch"],
       "enabled": false
     },
     "sqlite": {
       "type": "local",
       "command": [
-        "npx.cmd",
+        "npx",
         "-y",
         "mcp-server-sqlite",
         "--db",
-        "C:/Users/khdan_yksn3uv/Documents/Opencode/CRM Apps/database.db"
+        "/home/anto/akuntansiku/crm/data/crm.db"
       ],
       "enabled": true
     },
     "playwright": {
       "type": "local",
-      "command": ["npx.cmd", "-y", "@playwright/mcp@latest"],
+      "command": ["npx", "-y", "@playwright/mcp@latest"],
       "enabled": false
     },
     "context7": {
@@ -54,7 +54,7 @@
     },
     "github": {
       "type": "remote",
-      "url": "https://api.githubcopilot.com/mcp/",
+      "url": "https://api.github.com/mcp/",
       "enabled": false,
       "headers": {
         "Authorization": "Bearer {env:GITHUB_TOKEN}"

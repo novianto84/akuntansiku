@@ -1,0 +1,19 @@
+BRIDGE CONTRACT - ADDENDUM A2 INTEGRITY RECEIPT
+document                 : BRIDGE_CONTRACT.md
+addendum                 : A2 — Declared execution substrate and provider fallback
+authority                : HBA decision HBA-AOR2-02 = A (2026-09-26)
+performed_by             : Hermes
+change_type              : ADDITIVE ONLY - appended; every pre-existing byte preserved
+sha256_before            : 5b240fbe92e2f530f4e67362a594c7bb38ff1f7e21048806a45d24263bd6ef16
+sha256_after             : ab0bc6822b4198459a7ba7c23b0eabcd8fe02ac3e02e9bd97fe7b22479408076
+bytes_before             : 67316
+bytes_after              : 71436
+appended_bytes           : 4120
+prefix_unchanged         : True (verified by digest: the pre-addendum file is a byte prefix)
+business_semantics       : NOT modified
+R4 / R7 protected matter : NOT touched
+G1 / G1.1 / G1.2 / G1-D  : evidence NOT touched
+prices / credentials     : NOT recorded (deliberately)
+availability guarantee   : NONE (explicitly disclaimed in A2.5)
+REV2.2 revision identity : unchanged by this addendum
+address_of_record        : this receipt; the document does not contain its own digest

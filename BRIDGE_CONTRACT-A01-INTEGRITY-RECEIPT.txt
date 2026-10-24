@@ -1,0 +1,19 @@
+BRIDGE_CONTRACT — A-01 INTEGRITY RECEIPT (external address of record)
+generated_by      : Hermes, phase aor02 (authority: HBA AOR-02 §0.3 / §14, sha256 a7bfdbcb5ee23df81ffe062c78bbfc8aee5439e8a4033e72838de268e78a2f39)
+generated_at_utc  : 2026-09-26T13:44:22Z
+file              : /home/anto/akuntansiku/BRIDGE_CONTRACT.md
+
+integritas yang dibuktikan (bukan diklaim):
+  ADDITIVE_ONLY            : True
+  bytes_before             : 63010
+  bytes_after              : 67316
+  lines_after              : 1006
+  sha256_before_addendum   : 7c14a7f6f258083e771b73dca7c5d0f45d052c923c2a9a44dfd7265d51a2d962
+  sha256_after_addendum    : 5b240fbe92e2f530f4e67362a594c7bb38ff1f7e21048806a45d24263bd6ef16
+  pre_addendum_prefix_sha  : 7c14a7f6f258083e771b73dca7c5d0f45d052c923c2a9a44dfd7265d51a2d962
+  prefix_matches_before    : True
+
+identitas historis yang dipertahankan (tidak diubah oleh addendum):
+  REV2.1 accepted object   : f0462ff50e90a45d31f20a8fe04ff2915c8a653ae9b688a1029a3fbf97842769
+  REV2.2 as remediated     : 7c14a7f6f258083e771b73dca7c5d0f45d052c923c2a9a44dfd7265d51a2d962
+catatan: dokumen tidak dapat memuat digest-nya sendiri secara jujur; berkas inilah alamat resminya.
