@@ -76,4 +76,40 @@ dalam blok ini saja.
 - Commit: `8d71ee8` pada branch `feat/wo-discussion-20261024`
   (`github.com/novianto84/mitrasp-app`). Belum di-merge ke `main` — menunggu HBA.
 
-*End of implementation record.*
+## Addendum verifikasi independen (2026-10-24, oleh sesi desktop)
+
+**Jalur unggah gambar, bukan hanya tampilannya.** `crm/ui/verify_unit_assets.mjs`
+(24/24 lulus, chromium headless melawan layanan hidup 8092 → 8010 → basis data
+nyata): mengunggah LOGO MEREK lewat form di halaman Pengaturan → tersimpan di
+backend → tampil di dalam bingkai kartu Unit; mengunggah GAMBAR PERLENGKAPAN lewat
+form → tersimpan → tampil di tile baris memanjang; lalu keduanya DIHAPUS kembali
+lewat API sehingga basis data hidup bersih (0 gambar merek, 0 gambar perlengkapan).
+Termasuk pemeriksaan tata letak terbaru: empat bingkai tanpa tulisan label,
+perlengkapan satu baris (bukan menurun).
+
+**Cacat integrasi yang ditemukan dan diperbaiki di jalur ini.** Sel logo sempat
+tetap kosong walau unggahan berhasil: UI membaca `unit[kind]`/`equipment_images`
+sementara backend mengirim `unit.brands` dan `unit.equipment` (gambar yang cocok
+untuk unit itu). Perbaikan ada di `ui/src/lib/unitAssets.ts` (menerima kedua bentuk),
+commit `79a9f0a`.
+
+**Keadaan rangkaian tes penuh (bukan dari perubahan hari ini).** `python3 -m
+unittest discover -s tests -t . -q` menjalankan 848 tes dan melaporkan **11 masalah
+(4 FAIL, 7 ERROR)**. Semuanya SUDAH ADA sebelum perubahan hari ini: dibuktikan
+dengan menjalankan modul-modul yang sama pada worktree bersih di commit `d79bc7d`
+(increment sebelumnya) — di sana muncul 6 dari 6 yang diuji, dan 5 sisanya sudah
+dikenal sejak awal. Daftarnya: `tests/test_wo.py` WOSRLineage (3 error),
+`tests/test_material_seam.py` (3 error), `tests/test_location.py` (1 error),
+`tests/test_unit_qr.py` `test_admin_qr_path_denied_on_public_door`,
+`tests/test_material_usage.py` `test_cross_workspace_denied`,
+`tests/test_visit.py` `test_cross_workspace_visit_denied`,
+`tests/test_material_server.py` `test_material_full_flow`. Artinya: rangkaian tes
+proyek TIDAK hijau, dan itu kondisi yang diwarisi, bukan akibat pekerjaan ini. Klaim
+"semua tes lulus" hanya berlaku untuk modul yang tersentuh (diskusi, pintu, berkas
+unit, aset unit, riwayat, publikasi unit) — bukan seluruh rangkaian.
+
+**Penyimpangan kecil yang dicatat.** Bekas `git worktree` di `/tmp/crm_base2`
+(audit branch) telah di-`prune`; tidak ada berkas proyek yang dipengaruhi.
+
+*End of implementation record (dengan addendum verifikasi).*
+
