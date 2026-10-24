@@ -123,6 +123,13 @@ sana). Tidak ada harga atau valuasi di jalur portal.
   repo kanon/dokumen. **Belum di-merge ke `main`** — merge menunggu HBA.
 - Granularitas penanda (per berkas atau per jenis berkas) belum diputuskan HBA; implementasi
   memakai per artefak dan mudah disesuaikan bila HBA memilih lain.
+- **Penanda tanggal dokumen pada Riwayat belum terisi.** HBA-DECISIONS-30 menetapkan tanggal
+  dokumen menjadi penanda di Riwayat, dan UI sudah menyiapkan tempatnya, tetapi SISTEM TIDAK
+  MENYIMPAN tanggal dokumen di mana pun: `wo_photos`/`unit_documents` hanya punya waktu unggah,
+  dan `units.doc_ref` hanya nomor rujukan. Menampilkan waktu unggah sebagai "tanggal dokumen"
+  akan menyamakan dua hal yang justru dibedakan oleh putusan itu. Karena itu bidangnya
+  dibiarkan kosong sampai HBA memberi satu kalimat: tanggal dokumen DIKETIK pengunggah, atau
+  dibaca dari berkasnya (dan kalau diketik, apakah wajib).
 - Apakah penanda yang sama berlaku untuk lampiran WO/SR: menunggu satu kalimat HBA.
 - Peran Admin kini berpenghuni; akun lain (mis. Finance/Kasir) belum diminta.
 
