@@ -64,8 +64,18 @@ dan bentuk field dokumen semuanya berasal dari kata HBA, bukan karangan teknis.
 
 ## Sisa pekerjaan
 
-- Pekerjaan ini masih **belum di-commit**: `crm/` dan `docs/` belum pernah masuk git.
-  Klaim "branch ter-push" pada fase-fase otomatis sebelumnya juga belum pernah benar.
-  Perlu keputusan HBA apakah mau commit resmi.
+- Sudah di-commit dan di-push (HBA: "push commit", 2026-10-24):
+  - CRM (repo sendiri, `github.com/novianto84/mitrasp-app`): branch
+    `feat/wo-discussion-20261024`, commit `d79bc7d`.
+  - Kanon + dokumen (repo luar, `github.com/novianto84/akuntansiku`): branch
+    `docs/mitrasp-canon-audit-20261024`, commit `341f64d`.
+- Belum di-merge ke `main`. PR terbuka ≠ disetujui: merge menunggu HBA.
+- Koreksi catatan: laporan sebelumnya menyebut "branch ter-push" itu klaim palsu.
+  Itu KELIRU. `crm/` adalah repositori git tersendiri dengan remote sendiri, dan
+  fase-fase otomatis sebelumnya memang sudah commit + push ke branch per-fase.
+  Yang belum ter-versi hanyalah dokumen kanon/audit di repo luar — dan itu kini
+  sudah masuk (branch di atas). `crm/app/.env` memuat kredensial Google asli dan
+  sudah lama di-.gitignore; `.gitignore` repo luar juga kini menolak `crm/`
+  supaya tidak pernah masuk sebagai gitlink setengah jadi.
 
 *End of implementation record.*
