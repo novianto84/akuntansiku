@@ -207,7 +207,22 @@ no deviation arose) ✅.
   visibilitas bagi pengunggah atau teknisi (§10 tetap).
 - Vocabulary §2 tidak berubah; nol aturan bisnis baru di luar rekaman HBA di atas.
 
+## Addendum HBA-DECISIONS-36 (2026-10-24) — tata letak kartu Unit + registri gambar merek/perlengkapan
+
+- **Kartu Unit.** Barcode/QR portal berdiri di sebelah kanan baris kode unit. Logo merek tampil
+  mendatar mengikuti merek yang tercatat: [Mesin][logo merek mesin][Generator][logo merek
+  generator], lalu [Panel][logo merek controller][Genset][logo merek genset]. Perlengkapan menjadi
+  satu tabel di bawah berisi gambar tiap perlengkapan yang dicentang pada unit itu.
+- **Gambar yang belum ada dibiarkan kosong** — tidak ada gambar contoh atau pengganti karangan.
+- **Halaman konfigurasi gambar** (Manager/Admin): mengunggah/menghapus gambar merek per
+  jenis+merek dan gambar perlengkapan per butir. Satu gambar per jenis+merek dan per butir, per
+  workspace; unggahan berikutnya menggantikan yang lama. Peran lapangan hanya membaca.
+- **Sumber "merek genset" belum ada di data unit**; pemetaan sementara memakai merek mesin, dan
+  pemetaan itu diletakkan di satu tempat supaya mudah diubah bila HBA memutuskan lain.
+- Vocabulary §2 tidak berubah; nol aturan bisnis baru di luar rekaman HBA di atas.
+
 ---
 
-*End of IS-08 v1.2 (addendum HBA-DECISIONS-29/30/31/34, 2026-10-24).*
+*End of IS-08 v1.2 (addendum HBA-DECISIONS-29/30/31/34/36, 2026-10-24).*
+
 

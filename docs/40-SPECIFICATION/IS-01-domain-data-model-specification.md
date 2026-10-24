@@ -1111,9 +1111,20 @@ by documentation reconciliation (§14 E-35): the template axis is REJECTED/unuse
   pencatatan asal Visit di titik pengambilan tetap usulan teknis OPEN, bukan aturan bisnis.
 - Nol aturan bisnis baru di luar HBA-DECISIONS-30, -31, -32, dan -34.
 
+## Addendum HBA-DECISIONS-36 (2026-10-24) — registri gambar merek & perlengkapan
+
+- **Gambar merek.** Satu gambar per jenis (mesin / generator / module controller / genset) dan per
+  merek, dalam lingkup workspace; unggahan berikutnya menggantikan yang lama. Gambar dipakai untuk
+  menampilkan logo pada kartu Unit sesuai merek yang tercatat, bukan data baru tentang unitnya.
+- **Gambar perlengkapan.** Satu gambar per butir perlengkapan dari daftar yang sudah tertutup;
+  tidak menambah butir maupun kategori baru.
+- Keduanya berada di bawah otoritas kurasi peninjau (Manager/Admin) seperti berkas unit lainnya;
+  peran lapangan hanya membaca. Taksonomi jenis berkas di luar lantai terkunci tetap OPEN (OQ-05).
+- Nol aturan bisnis baru di luar rekaman HBA-DECISIONS-36.
+
 ---
 
-*End of IS-01 + Addendum HBA-DECISIONS-30/31/32/34 (2026-10-24). Next candidate (not started):
+*End of IS-01 + Addendum HBA-DECISIONS-30/31/32/34/36 (2026-10-24). Next candidate (not started):
 **IS-02 WORKFLOW & STATE TRANSITION SPECIFICATION** — awaiting explicit Business Authority
 instruction. STOP.*
 
