@@ -3,7 +3,7 @@
 ```text
 Document ID: IS-06
 Title: Customer Projection & Portal
-Version: v1.3 (additive v1.2→v1.3: HBA-DECISIONS-16 manual intake replaces automatic elevation for Unit Portal; HBA-DECISIONS-17 short permanent QR code screen-only; panel queue approve/reply/ignore. No new business rule beyond those locked records.)
+Version: v1.4 (additive v1.3→v1.4: addendum HBA-DECISIONS-30/34 — berkas tingkat Unit yang boleh tampil di portal pelanggan (sertifikat, manual book, gambar unit) setelah penanda terbit Manager/Admin, dan tiga hal penyerahan unit yang tidak dicantumkan. Settled v1.3 content unchanged; no new business rule beyond those recorded HBA decisions.)
 Status: LOCKED / CANONICAL — BUSINESS AUTHORITY APPROVAL 2026-10-12 (HBA chat: kunci IS-06; v1.3 additive HBA-DECISIONS-16/17/18; settled v1.2 content retained, automatic elevation superseded by manual intake)
 Authority: AI Manager / Lead Architect (specification author); Business Authority owns business rules
 Scope: Customer-facing read behavior, eligibility, scope, visibility, and projection boundaries
@@ -557,4 +557,20 @@ document is **LOCKED / CANONICAL** as approved above.
 - Timing salinan pelanggan: dibuat saat WO ditutup yaitu saat manager approve (`approve_report` / CLOSED) per perintah HBA (c). Wording lama yang bertentangan retained sebagai riwayat superseded.
 - Perluasan panel konfigurasi + kaitan Google HBA ke manager dicatat sebagai perintah (d)(e); rincian ikut eksekusi terotorisasi.
 
-**IS-06 v1.3 LOCKED (HBA 2026-10-12) + Addendum HBA-DECISIONS-22 (2026-10-13).**
+## Addendum HBA-DECISIONS-30 / -34 (2026-10-24) — berkas unit yang boleh tampil, dan yang tidak
+
+- **Boleh diproyeksikan**, hanya setelah ada penanda terbitan yang ditetapkan Manager/Admin (objek dan
+  otoritasnya di IS-05/IS-03 addendum): **sertifikat unit, manual book, dan gambar unit**. Tanpa
+  penanda, berkas tingkat Unit tidak pernah muncul di bidang pelanggan — allowlist §10, gerbang §14,
+  dan invariant I-10 tetap berlaku tanpa perubahan.
+- **Tidak dicantumkan di portal pelanggan** (HBA 2026-10-24): rujukan nomor SPK/Invoice/Project,
+  tanggal penyerahan unit, dan lampiran penyerahan unit.
+- Kebijakan retensi **D-01A = RETAIN** tetap berlaku untuk apa yang sudah pernah disajikan; pencabutan
+  penanda menarik kembali proyeksi berikutnya, bukan riwayat yang sudah tersaji.
+- Mekanisme penyajian tetap OPEN (O-01/O-02/O-04); addendum ini tidak memutuskan mekanisme.
+- Nol aturan bisnis baru di luar HBA-DECISIONS-30 dan -34.
+
+---
+
+**IS-06 v1.4 (HBA 2026-10-12) + Addendum HBA-DECISIONS-22 (2026-10-13) + Addendum HBA-DECISIONS-30/34 (2026-10-24).**
+

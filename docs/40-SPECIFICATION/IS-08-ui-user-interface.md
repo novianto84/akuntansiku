@@ -3,7 +3,7 @@
 ```text
 Document ID: IS-08
 Title: UI & User Interaction Specification (V1)
-Version: 1.1 (v1.0→v1.1: HBA approval 2026-10-01; deviation-log item O-10 accounted for. No behaviour change.)
+Version: 1.2 (additive v1.1→v1.2: addendum HBA-DECISIONS-29/30/31/34 — revisi tampilan detail Unit arah D (empat permukaan) + permukaan Kotak Masuk pemberitahuan diskusi. Settled v1.1 content unchanged; no new business rule beyond those recorded HBA decisions.)
 Status: APPROVED — HBA approval 2026-10-01 (see docs/90-AUDIT/IS08-APPROVAL-DECISIONS-01.md)
 Authority: AI Manager / Lead Architect (specification author). Business Authority owns all rules.
 Scope: Implementation-relevant UI behavior required for MitraSP CRM V1 internal operations.
@@ -185,4 +185,27 @@ no deviation arose) ✅.
 
 ---
 
-*End of IS-08 v1.1 — APPROVED (HBA, 2026-10-01).*
+## Addendum HBA-DECISIONS-29 / -30 / -31 / -34 (2026-10-24) — revisi tampilan detail Unit + permukaan Kotak Masuk
+
+- **Detail Unit menjadi empat permukaan berurutan.** (1) **Profil Unit** — gabungan Tentang +
+  Nameplate + Perlengkapan, dikelompokkan berjudul; field kosong tampil kosong, tidak dikarang.
+  (2) **Riwayat** — histori per aktivitas; peristiwa menjadi urutan dasar, tanggal dokumen menjadi
+  penanda; dokumen yang diunggah belakangan berdiri di urutan terakhir di dalam grup induknya
+  (HBA-DECISIONS-30). (3) **Ruang Diskusi** — percakapan internal tingkat WO (bukan ruang bebas
+  tingkat Unit). (4) **Galery & berkas** — dua kolom: kolom kiri berkas tingkat Unit (sertifikat,
+  manual book, gambar), kolom utama berkas yang melekat pada induk dokumen (WO/SR) dibingkai nomor
+  induk, dipisah per aktivitas.
+- **Kotak Masuk.** Satu permukaan pemberitahuan **di dalam aplikasi** dengan angka jumlah pesan
+  diskusi yang belum dibaca pada menu. Pemberitahuan hanya di dalam aplikasi; tidak ada kanal luar
+  (HBA 2026-10-24). §1 "notification surface" yang semula di luar lingkup kini masuk lingkup sebatas
+  ini.
+- **Panggilan pekerja** tampil sebagai sebutan di dalam pesan diskusi. UI tidak boleh menampilkannya
+  sebagai perintah kerja, persetujuan, atau item audit.
+- **Penanda terbitan** tampil hanya sebagai kendali bagi Manager/Admin; UI tidak menyediakan pilihan
+  visibilitas bagi pengunggah atau teknisi (§10 tetap).
+- Vocabulary §2 tidak berubah; nol aturan bisnis baru di luar rekaman HBA di atas.
+
+---
+
+*End of IS-08 v1.2 (addendum HBA-DECISIONS-29/30/31/34, 2026-10-24).*
+

@@ -3,7 +3,7 @@
 ```text
 Document ID: IS-07
 Title: Audit, History & Correction Specification
-Version: 1.1 (controlled correction v1.0→v1.1: S-01 §5 current-state scoping; no content revision)
+Version: 1.2 (additive v1.1→v1.2: addendum HBA-DECISIONS-30/31/34 — diskusi WO bukan peristiwa audit; transisi penanda terbitan adalah peristiwa audit. Settled v1.1 content unchanged; no new audit family beyond those recorded HBA decisions.)
 Status: LOCKED / CANONICAL — BUSINESS AUTHORITY APPROVAL (review: PASS WITH MINOR FINDINGS → S-01 RESOLVED; MUST/SHOULD FIX 0; UNSOURCED 0)
 Lock record: settled normative content authoritative as reviewed; OPEN/DEFERRED items remain unresolved.
 Scope: Audit ownership; event families; append-only/history semantics; correction lineage;
@@ -124,4 +124,21 @@ complete ✅ · neutral ✅ · single-file scope ✅.
 
 ---
 
-*End of IS-07 v1.0 DRAFT.*
+## Addendum HBA-DECISIONS-30 / -31 / -34 (2026-10-24) — diskusi bukan audit; penanda terbitan diobservasi audit
+
+- **Diskusi Work Order bukan peristiwa audit.** Pesan diskusi adalah catatan komunikasi internal:
+  ia tidak masuk keluarga peristiwa §3, tidak menjadi bagian trail pengendali (§5), dan tidak pernah
+  dipakai sebagai pengganti perintah kerja atau persetujuan (HBA: "hanya berupa catatan"). Satu
+  pemilik definisi audit (§2) tidak berubah; IS-01/IS-03 tidak menambah model audit tandingan.
+- **Pemberitahuan panggilan bukan audit.** Pemberitahuan dalam aplikasi adalah permukaan UI (IS-08),
+  bukan peristiwa audit.
+- **Transisi penanda terbitan berkas tingkat Unit diobservasi audit.** Penetapan dan pencabutan
+  penanda terbitan oleh Manager/Admin (objek milik IS-05) mengikuti pola peristiwa approval/
+  eligibility/supersession yang sudah ada: aktor, waktu server, objek, keadaan sebelum/sesudah.
+  Objeknya tetap milik IS-05; bentuk peristiwanya milik dokumen ini.
+- Nol keluarga peristiwa baru dan nol peredefinisian audit di luar itu.
+
+---
+
+*End of IS-07 v1.2 (addendum HBA-DECISIONS-30/31/34, 2026-10-24).*
+

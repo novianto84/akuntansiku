@@ -26,6 +26,20 @@ This register records current decision-document status and known Human Decision 
 > permission, or status, and authorizes no implementation. Traceability: Human Decision **D-7** (2026-10-02)
 > -> `SOUL.md` revision -> this note.
 
+> **Amendment note — HBA-DECISIONS-30/31/32/34 dan addendum kanon (2026-10-24, catatan oleh Hermes).**
+> Perintah HBA **"segera kanonin kan. dan eksekusikan"** (chat 2026-10-24) menutup empat pertanyaan
+> terbuka HBA-DECISIONS-30: diskusi boleh dibaca semua pihak internal; panggilan pekerja cukup di dalam
+> aplikasi dan semua pihak internal berhak memanggil; hanya Manager/Admin yang menandai berkas boleh
+> tampil di portal pelanggan; dan rujukan SPK/Invoice/Project cukup **satu kolom**. Peran **Admin diisi
+> akun** yang dikaitkan dengan akun Google `noviantodj@gmail.com`. Addendum kanon yang bersangkutan:
+> `IS-01` (diskusi internal, rujukan dokumen unit, penyerahan unit, penanda terbitan), `IS-03` v1.5
+> (hak baca internal, panggilan, penanda terbitan, pengisian peran Admin), `IS-05` v1.2 (penanda terbitan
+> artefak tingkat Unit + bingkai WO setara Visit), `IS-06` v1.4 (berkas unit yang boleh tampil dan tiga
+> hal penyerahan yang tidak dicantumkan), `IS-07` v1.2 (diskusi bukan audit; transisi penanda diobservasi
+> audit), `IS-08` v1.2 (empat permukaan detail Unit + Kotak Masuk). Rekaman audit: HBA-DECISIONS-30,
+> -31, -32, -33, -34. Catatan ini **aditif**: tidak mengubah baris mana pun di bawah, tidak membuat
+> keputusan bisnis, peran, izin, atau status baru di luar rekaman HBA di atas.
+
 ## Current Decision Documents
 
 | Decision | Status | Canonical source | Traceability note |

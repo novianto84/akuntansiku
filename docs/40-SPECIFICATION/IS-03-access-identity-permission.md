@@ -3,7 +3,7 @@
 ```text
 Document ID: IS-03
 Title: Access, Identity & Permission Specification
-Version: 1.4 (additive v1.3→v1.4: V-4 restated to HBA-DECISIONS-16 manual intake — automatic elevation retired to superseded history; settled content unchanged. No new business rule beyond those locked records.)
+Version: 1.5 (additive v1.4→v1.5: addendum HBA-DECISIONS-30/31/34 — diskusi internal WO, panggilan pekerja internal, penanda terbitan berkas tingkat Unit, pengisian peran Admin. Settled v1.4 content unchanged; no new business rule beyond those recorded HBA decisions.)
 Status: LOCKED / CANONICAL — BUSINESS AUTHORITY APPROVAL 2026-10-12 (HBA chat: audit+selaraskan semua kanonik; v1.4 = V-4 manual intake, settled v1.3 unchanged)
 Lock record: settled normative content authoritative as reviewed; OPEN/DEFERRED items remain unresolved; O-v1.1-01 remains observation only.
 Scope: Identity-link lifecycle; role/authority catalog; permission-matrix structure;
@@ -188,4 +188,26 @@ neutrality, append-only) ✅ · no unauthorized file modified (single-file creat
 
 ---
 
-*End of IS-03 v1.4 LOCKED (HBA 2026-10-12).*
+## Addendum HBA-DECISIONS-30 / -31 / -34 (2026-10-24) — diskusi internal, panggilan pekerja, penanda terbitan, pengisian peran Admin
+
+- **Bidang internal saja.** Diskusi Work Order tidak punya rute di bidang eksternal; pintu publik
+  tidak mengonfirmasi keberadaannya (permintaan HBA: "hanya bisa dilihat oleh internal. tidak boleh
+  keluar"). Setiap pengguna internal yang berhak membaca WO bersangkutan berhak membaca dan menulis
+  diskusinya, di dalam workspace aktifnya. V-1…V-10 tidak berubah.
+- **Panggilan (tag).** Semua pengguna internal berhak dipanggil — tidak dibatasi pada pekerja
+  lapangan (HBA 2026-10-24). Panggilan TIDAK mengubah hak baca, karena hak baca sudah internal;
+  panggilan hanya menimbulkan pemberitahuan di dalam aplikasi.
+- **Penanda terbitan berkas tingkat Unit.** Hanya Manager/Admin — otoritas kurasi peninjau
+  (CD-11 §21) — yang berhak menandai berkas unit boleh tampil di portal pelanggan. Pengunggah,
+  termasuk teknisi, tidak pernah menetapkan visibilitas (§4, §9 tetap). Negative path baru:
+  berkas tingkat Unit tanpa penanda terbit dinyatakan tidak eligible dan ditolak di bidang eksternal.
+- **Peran Admin diisi akun manusia.** Admin adalah peran manusia yang diisi akun internal terhubung
+  identitas Google terverifikasi (HBA 2026-10-24: dikaitkan dengan `noviantodj@gmail.com`). Alamat
+  akun dicatat sebagai konfigurasi operasional di register/audit, bukan sebagai aturan di dokumen ini.
+  ADMIN bukan principal sistem; pengisian peran ini tidak menambah otoritas di luar §4.
+- Nol aturan bisnis baru di luar HBA-DECISIONS-30, -31, dan -34.
+
+---
+
+*End of IS-03 v1.5 (addendum HBA-DECISIONS-30/31/34, 2026-10-24).*
+

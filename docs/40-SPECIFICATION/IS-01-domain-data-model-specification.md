@@ -1090,5 +1090,30 @@ by documentation reconciliation (§14 E-35): the template axis is REJECTED/unuse
 - Timing salinan pelanggan (customer snapshot): dibuat saat WO ditutup yaitu saat manager approve (`approve_report` / CLOSED) per perintah HBA (c). Wording lama yang bertentangan retained sebagai riwayat superseded, tak dihapus.
 - Nol aturan bisnis baru di luar perintah HBA-DECISIONS-22.
 
-*End of IS-01. Next candidate (not started): **IS-02 WORKFLOW & STATE TRANSITION SPECIFICATION**
-— awaiting explicit Business Authority instruction. STOP.*
+## Addendum HBA-DECISIONS-30 / -31 / -32 / -34 (2026-10-24) — diskusi internal WO, rujukan dokumen unit, penanda terbitan berkas unit
+
+- **Diskusi internal Work Order (konsep baru).** Pesan per WO: satu pesan satu baris dengan penulis dan
+  waktu server; penanda terbaca per pengguna, dan ketiadaan penanda itulah yang berarti belum dibaca.
+  Diskusi adalah **catatan**: bukan perintah kerja, bukan persetujuan, bukan bagian trail audit
+  (IS-07 addendum). Ruangnya terbatas pada WO, bukan ruang bebas tingkat Unit. Setiap pengguna internal
+  boleh membaca dan menulis (IS-03 addendum), dan setiap pengguna internal boleh dipanggil di dalam
+  pesan; panggilan menimbulkan pemberitahuan **di dalam aplikasi saja**.
+- **Rujukan dokumen unit (SPK / Invoice / Project).** **Satu kolom bebas** pada Unit (HBA: "satu kolom
+  saja"), disimpan apa adanya. Menutup usulan tiga kolom terpisah di HBA-DECISIONS-30.
+- **Penyerahan unit.** Unit membawa tanggal penyerahan serta lampiran dokumen/gambar penyerahan.
+  Rujukan, tanggal, dan lampiran penyerahan **tidak** diproyeksikan ke portal pelanggan (IS-06 addendum).
+- **Penanda terbitan berkas tingkat Unit.** Dokumen (sertifikat, manual book) dan gambar unit bersifat
+  internal sampai ada penanda terbitan yang ditetapkan **Manager/Admin**; pengunggah tidak pernah
+  menetapkan visibilitas (IS-05 addendum). Susunan galeri: berkas tingkat Unit berdiri di kolom
+  tersendiri, berkas yang melekat pada dokumen induk (WO/SR) berdiri di kolom utama dan dibingkai
+  nomor induknya.
+- Bingkai bukti: HBA menetapkan Visit adalah bagian dari WO sehingga bingkai WO dipandang setara;
+  pencatatan asal Visit di titik pengambilan tetap usulan teknis OPEN, bukan aturan bisnis.
+- Nol aturan bisnis baru di luar HBA-DECISIONS-30, -31, -32, dan -34.
+
+---
+
+*End of IS-01 + Addendum HBA-DECISIONS-30/31/32/34 (2026-10-24). Next candidate (not started):
+**IS-02 WORKFLOW & STATE TRANSITION SPECIFICATION** — awaiting explicit Business Authority
+instruction. STOP.*
+

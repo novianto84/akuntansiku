@@ -3,7 +3,7 @@
 ```text
 Document ID: IS-05
 Title: Evidence, Attachment & Storage Specification
-Version: 1.1 (controlled correction v1.0→v1.1: F-01 DERIVED markings; no content revision)
+Version: 1.2 (additive v1.1→v1.2: addendum HBA-DECISIONS-30/34 — penanda terbitan artefak tingkat Unit oleh Manager/Admin; bingkai WO dipandang setara Visit. Settled v1.1 content unchanged; no new business rule beyond those recorded HBA decisions.)
 Status: LOCKED / CANONICAL — BUSINESS AUTHORITY APPROVAL (targeted regression: F-01 RESOLVED; MUST/SHOULD FIX 0; UNSOURCED 0)
 Lock record: settled normative content authoritative as reviewed; OPEN/DEFERRED items remain unresolved.
 Scope: Evidence/attachment concepts, objects, lifecycle, categories (locked floor),
@@ -129,4 +129,22 @@ single-file scope ✅.
 
 ---
 
-*End of IS-05 v1.0 DRAFT.*
+## Addendum HBA-DECISIONS-30 / -34 (2026-10-24) — penanda terbitan artefak tingkat Unit
+
+- §7 tetap: teknisi dan pengunggah tidak pernah memilih visibilitas. Yang bertambah adalah keputusan
+  bisnis untuk artefak yang melekat pada **Unit** (bukan pada Visit/WO): sertifikat unit, manual book,
+  dan gambar unit.
+- Artefak tingkat Unit bersifat internal sejak diunggah dan tetap internal sampai **penanda terbitan**
+  ditetapkan **Manager/Admin** (HBA 2026-10-24). Penanda itu keputusan kurasi peninjau (CD-11 §21) —
+  bukan properti jenis berkas, dan bukan pilihan pengunggah.
+- Hanya artefak bertanda terbit yang boleh diproyeksikan ke bidang pelanggan; batas penyajian tetap
+  IS-06 §12. Pencabutan penanda menarik kembali proyeksi.
+- Bingkai pengumpulan: HBA menyatakan Visit adalah bagian dari WO sehingga bingkai WO dipandang setara
+  (HBA-DECISIONS-30). Karena itu menyimpan artefak di tingkat WO tidak melanggar §4; pencatatan asal
+  Visit di titik pengambilan tetap usulan teknis OPEN, bukan aturan bisnis.
+- Taksonomi di luar lantai terkunci tetap OPEN (OQ-05). Nol kategori baru.
+
+---
+
+*End of IS-05 v1.2 (addendum HBA-DECISIONS-30/34, 2026-10-24).*
+
