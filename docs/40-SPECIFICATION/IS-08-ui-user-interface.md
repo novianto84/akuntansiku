@@ -191,7 +191,9 @@ no deviation arose) ✅.
   Nameplate + Perlengkapan, dikelompokkan berjudul; field kosong tampil kosong, tidak dikarang.
   (2) **Riwayat** — histori per aktivitas; peristiwa menjadi urutan dasar, tanggal dokumen menjadi
   penanda; dokumen yang diunggah belakangan berdiri di urutan terakhir di dalam grup induknya
-  (HBA-DECISIONS-30). (3) **Ruang Diskusi** — percakapan internal tingkat WO (bukan ruang bebas
+  (HBA-DECISIONS-30). **Tanggal dokumen = waktu unggah berkasnya** (HBA 2026-10-24: "tanggal
+  dokumen dari tanggal di undah"); WO yang belum punya berkas tampil tanpa penanda — tanggal
+  peristiwa tidak dipinjam untuk mengisinya. (3) **Ruang Diskusi** — percakapan internal tingkat WO (bukan ruang bebas
   tingkat Unit). (4) **Galery & berkas** — dua kolom: kolom kiri berkas tingkat Unit (sertifikat,
   manual book, gambar), kolom utama berkas yang melekat pada induk dokumen (WO/SR) dibingkai nomor
   induk, dipisah per aktivitas.

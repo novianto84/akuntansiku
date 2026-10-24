@@ -123,13 +123,14 @@ sana). Tidak ada harga atau valuasi di jalur portal.
   repo kanon/dokumen. **Belum di-merge ke `main`** — merge menunggu HBA.
 - Granularitas penanda (per berkas atau per jenis berkas) belum diputuskan HBA; implementasi
   memakai per artefak dan mudah disesuaikan bila HBA memilih lain.
-- **Penanda tanggal dokumen pada Riwayat belum terisi.** HBA-DECISIONS-30 menetapkan tanggal
-  dokumen menjadi penanda di Riwayat, dan UI sudah menyiapkan tempatnya, tetapi SISTEM TIDAK
-  MENYIMPAN tanggal dokumen di mana pun: `wo_photos`/`unit_documents` hanya punya waktu unggah,
-  dan `units.doc_ref` hanya nomor rujukan. Menampilkan waktu unggah sebagai "tanggal dokumen"
-  akan menyamakan dua hal yang justru dibedakan oleh putusan itu. Karena itu bidangnya
-  dibiarkan kosong sampai HBA memberi satu kalimat: tanggal dokumen DIKETIK pengunggah, atau
-  dibaca dari berkasnya (dan kalau diketik, apakah wajib).
+- **Penanda tanggal dokumen pada Riwayat: TERJAWAB dan terpasang.** HBA-DECISIONS-30 menetapkan
+  tanggal dokumen menjadi penanda di Riwayat; saat implementasi ternyata sistem tidak menyimpan
+  tanggal dokumen di mana pun, dan pertanyaan saya dijawab HBA 2026-10-24: "tanggal dokumen dari
+  tanggal di undah" — penandanya adalah **waktu unggah berkasnya**. Terpasang di
+  `app/reporting/history.py` (`_enrich_history` mengisi `document_date` dari waktu unggah berkas
+  WO; kosong bila WO belum punya berkas, tidak dipinjam dari tanggal peristiwa), dan UI Riwayat
+  menampilkannya sebagai lencana "Dokumen &lt;tanggal&gt;". Bukti: `tests/test_reporting_history.py`
+  (`test_document_date_is_the_upload_time_of_the_wo_files`).
 - Apakah penanda yang sama berlaku untuk lampiran WO/SR: menunggu satu kalimat HBA.
 - Peran Admin kini berpenghuni; akun lain (mis. Finance/Kasir) belum diminta.
 
