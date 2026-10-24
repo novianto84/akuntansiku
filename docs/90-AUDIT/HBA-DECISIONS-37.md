@@ -94,11 +94,13 @@ untuk unit itu). Perbaikan ada di `ui/src/lib/unitAssets.ts` (menerima kedua ben
 commit `79a9f0a`.
 
 **Keadaan rangkaian tes penuh (bukan dari perubahan hari ini).** `python3 -m
-unittest discover -s tests -t . -q` menjalankan 848 tes dan melaporkan **11 masalah
-(4 FAIL, 7 ERROR)**. Semuanya SUDAH ADA sebelum perubahan hari ini: dibuktikan
-dengan menjalankan modul-modul yang sama pada worktree bersih di commit `d79bc7d`
-(increment sebelumnya) — di sana muncul 6 dari 6 yang diuji, dan 5 sisanya sudah
-dikenal sejak awal. Daftarnya: `tests/test_wo.py` WOSRLineage (3 error),
+unittest discover -s tests -t . -q` pada kode TERAKHIR (v40 + v41 + UI) menjalankan
+**869 tes** dan melaporkan **11 masalah (4 FAIL, 7 ERROR)** — daftarnya IDENTIK
+dengan yang dilaporkan sebelum pekerjaan ini, hanya jumlah tes yang bertambah (848 → 869
+karena 21 tes baru ikut bergabung dan lulus). Semuanya SUDAH ADA sebelum perubahan
+hari ini: dibuktikan dengan menjalankan modul-modul yang sama pada worktree bersih di
+commit `d79bc7d` (increment sebelumnya) — di sana muncul 6 dari 6 yang diuji, dan 5
+sisanya sudah dikenal sejak awal. Daftarnya: `tests/test_wo.py` WOSRLineage (3 error),
 `tests/test_material_seam.py` (3 error), `tests/test_location.py` (1 error),
 `tests/test_unit_qr.py` `test_admin_qr_path_denied_on_public_door`,
 `tests/test_material_usage.py` `test_cross_workspace_denied`,
