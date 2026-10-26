@@ -83,7 +83,14 @@ skema. Kewenangan (ASSIGN_WO = Manager/Coordinator) tetap di backend.
 - Baris uji dibersihkan: WO uji dibuat lalu dihapus, hitungan DB sebelum/sesudah
   identik (`wo 9, jobs 10, assign 7`).
 - `crm-ui.service` di-restart sehingga `ui/dist` yang disajikan adalah bundle hasil
-  build ini (`index-ReDkHlKj.js`).
+  build ini; setelah penyederhanaan `ScopeLines` (tanpa sinkronisasi state di
+  effect, supaya tidak menambah peringatan lint) build diulang dan pemeriksa yang
+  sama dijalankan **ulang: 28 cek LULUS lagi** pada bundle `index-DlKoqscF.js`.
+- `npm run lint` tidak menambah peringatan baru dari berkas yang disentuh.
+- Commit di `crm/`: `6d7ad5a` (perubahan utama) dan `53d44e2` (penyederhanaan
+  `ScopeLines`), keduanya di cabang `feat/wo-scope-assign-20261026`.
+- Sesi login yang dipakai pemeriksa sudah dicabut kembali (`sessions.revoked_at`),
+  jumlah sesi aktif kembali seperti sebelum pekerjaan.
 
 ## Yang masih terbuka
 
